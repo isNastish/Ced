@@ -2,7 +2,7 @@
 @echo off
 
 set common_compiler_flags=/nologo /TC /Zi /FC 
-set common_linker_flags=user32.lib gdi32.lib
+set common_linker_flags=user32.lib gdi32.lib winmm.lib opengl32.lib
 
 REM -E - copies preprocessor output to standart output.
 REM -EP - copies preprocessor output to standart output.

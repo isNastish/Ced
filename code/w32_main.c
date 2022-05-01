@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <stdint.h>
+#include <gl/gl.h> // NOTE: basic OpenGL functions were loaded.
 
 #define global static
 #define internal static
@@ -17,8 +18,36 @@ typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
+typedef float real32;
+typedef double real64;
+
+typedef real32 f32;
+typedef real64 f64;
+
+typedef struct W32_WindowDim{
+    s32 width;
+    s32 height;
+}W32_WindowDim;
+
 global s8 global_running;
 global HINSTANCE global_instance_handle;
+global HDC global_device_context;
+global HGLRC global_opengl_rendering_context;
+
+internal W32_WindowDim w32_get_window_dimension(HWND window){
+    W32_WindowDim dimension = {0};
+
+    RECT window_rect = {0};
+    GetClientRect(window, &window_rect);
+    dimension.width = window_rect.right - window_rect.left;
+    dimension.height = window_rect.bottom - window_rect.top;
+    
+    return(dimension);
+}
+
+internal void w32_init_opengl(HWND window){
+    
+}
 
 LRESULT w32_window_proc(HWND window,
                         UINT msg,
@@ -83,8 +112,7 @@ INT WINAPI WinMain(HINSTANCE instance,
         goto quit;
         
     }
-
-
+    
     global_running = 1;
     while(global_running){
         
@@ -93,7 +121,9 @@ INT WINAPI WinMain(HINSTANCE instance,
 
             TranslateMessage(&message);
             DispatchMessageA(&message);
+
         }
+        //glClearColor(0xff, 0, 0, 0);
     }
 
 quit:;
