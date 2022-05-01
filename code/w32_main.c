@@ -61,6 +61,37 @@ LRESULT w32_window_proc(HWND window,
         case(WM_QUIT):{
             global_running = 0;
         }break;
+        case(WM_CREATE):{
+            //OutputDebugStringA("window was created!\n");
+
+            PIXELFORMATDESCRIPTOR pfd = {0};
+
+            {
+                pfd.nSize = sizeof(PIXELFORMATDESCRIPTOR);
+                pfd.nVersion = 1;
+                pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+                pfd.iPixelType = PFD_TYPE_RGBA; // the kind of framebuffer. RGBA or palette.
+                pfd.cColorBits = 32; // colordepth of the framebuffer.
+
+                pfd.cDepthBits = 24; // number of bits for the depthbuffer.
+                pfd.cStencilBits = 8; // number of bits for the stencilbuffer.
+
+                pfd.iLayerType = PFD_MAIN_PLANE;
+            }
+            
+            global_device_context = GetDC(window);
+
+            s32 format = ChoosePixelFormat(global_device_context, &pfd);
+            SetPixelFormat(global_device_context, format, &pfd);
+            
+            global_opengl_rendering_context = wglCreateContext(global_device_context);
+            
+            wglMakeCurrent(global_device_context,
+                           global_opengl_rendering_context);
+
+            MessageBoxA(0, (char *)glGetString(GL_VERSION), "OpenGL Version", 0);
+            
+        }break;
         default:{
             result = DefWindowProc(window, msg, w_param, l_param);
         }break;
@@ -123,7 +154,6 @@ INT WINAPI WinMain(HINSTANCE instance,
             DispatchMessageA(&message);
 
         }
-        //glClearColor(0xff, 0, 0, 0);
     }
 
 quit:;
