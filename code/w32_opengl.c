@@ -1,9 +1,28 @@
 
 
 internal void *w32_load_opengl_proc(char *proc_name){
-    void *result = 0;
+    void *proc = (void *)wglGetProcAddress(proc_name);
+    if(!proc){
+        return(0);
+    }
+    return(proc);
+}
 
-    return(result);
+internal void w32_load_wgl_functions(HINSTANCE instance){
+    // NOTE: functions to load:
+        
+    // wglChoosePixelFormatARB
+    // wglCreateContextAttribsARB
+    // wglMakeContextCurrentARB
+    // wglSwapIntervalEXT
+
+    // TODO: 
+#if 0
+    wglChoosePixelFormatARB = ;
+    wglCreateContextAttribsARB = ;
+    wglMakeContextCurrentARB = ;
+    wglSwapIntervalEXT = ;
+#endif
 }
 
 internal b32 w32_init_opengl(HWND window){
@@ -34,7 +53,13 @@ internal b32 w32_init_opengl(HWND window){
     global_opengl_rendering_context = wglCreateContext(global_device_context);
     if(wglMakeCurrent(global_device_context,
                       global_opengl_rendering_context)){
-        MessageBox(0, (char *)glGetString(GL_VERSION), "OpenGL version", 0);
+        char opengl_version_buf[256];
+        sprintf_s(opengl_version_buf,
+                  sizeof(opengl_version_buf),
+                  "OpenGL version: %s.\n",
+                  (char *)glGetString(GL_VERSION));
+        OutputDebugStringA(opengl_version_buf);
+        
         result = 1;
     }
     else{
