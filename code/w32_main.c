@@ -2,7 +2,7 @@
 
 #include <windows.h>
 #include <stdint.h>
-#include <gl/gl.h> // NOTE: basic OpenGL functions were loaded.
+#include <gl/gl.h>
 
 #define global static
 #define internal static
@@ -36,7 +36,7 @@ global HGLRC global_opengl_rendering_context;
 
 internal W32_WindowDim w32_get_window_dimension(HWND window){
     W32_WindowDim dimension = {0};
-
+    
     RECT window_rect = {0};
     GetClientRect(window, &window_rect);
     dimension.width = window_rect.right - window_rect.left;
@@ -46,7 +46,14 @@ internal W32_WindowDim w32_get_window_dimension(HWND window){
 }
 
 internal void w32_init_opengl(HWND window){
-    
+    global_device_context = GetDC(window);
+    global_opengl_rendering_context = wglCreateContext(global_device_context);
+    if(wglMakeCurretn(global_device_context,
+                      global_opengl_rendering_context)){
+    }
+    else{
+        // TODO: error handling.
+    }
 }
 
 LRESULT w32_window_proc(HWND window,
@@ -62,25 +69,25 @@ LRESULT w32_window_proc(HWND window,
             global_running = 0;
         }break;
         case(WM_CREATE):{
-            //OutputDebugStringA("window was created!\n");
 
+            // NOTE: describes the pixel format of a drawing surface. 
             PIXELFORMATDESCRIPTOR pfd = {0};
-
+            
             {
                 pfd.nSize = sizeof(PIXELFORMATDESCRIPTOR);
                 pfd.nVersion = 1;
                 pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
                 pfd.iPixelType = PFD_TYPE_RGBA; // the kind of framebuffer. RGBA or palette.
                 pfd.cColorBits = 32; // colordepth of the framebuffer.
-
+                
                 pfd.cDepthBits = 24; // number of bits for the depthbuffer.
                 pfd.cStencilBits = 8; // number of bits for the stencilbuffer.
-
+                
                 pfd.iLayerType = PFD_MAIN_PLANE;
             }
             
             global_device_context = GetDC(window);
-
+            
             s32 format = ChoosePixelFormat(global_device_context, &pfd);
             SetPixelFormat(global_device_context, format, &pfd);
             
@@ -88,7 +95,7 @@ LRESULT w32_window_proc(HWND window,
             
             wglMakeCurrent(global_device_context,
                            global_opengl_rendering_context);
-
+            
             MessageBoxA(0, (char *)glGetString(GL_VERSION), "OpenGL Version", 0);
             
         }break;
@@ -105,7 +112,7 @@ INT WINAPI WinMain(HINSTANCE instance,
                    HINSTANCE prev_instance,
                    PSTR cmd_line,
                    int show_code){
-
+    
     global_instance_handle = instance;
     
     WNDCLASSA window_class = {0};
@@ -119,13 +126,13 @@ INT WINAPI WinMain(HINSTANCE instance,
         window_class.hbrBackground = (HBRUSH)GetStockObject(DKGRAY_BRUSH);
         window_class.lpszClassName = "AppWindowClass";
     }
-
-
+    
+    
     if(!RegisterClassA(&window_class)){
         // TODO: error handling.
         goto quit;
     }
-
+    
     HWND window_handle = CreateWindowEx(0,
                                         window_class.lpszClassName, 
                                         "Ced",
@@ -137,7 +144,7 @@ INT WINAPI WinMain(HINSTANCE instance,
                                         0, 0,
                                         global_instance_handle,
                                         0);
-
+    
     if(!window_handle){
         // TODO: error handling.
         goto quit;
@@ -149,14 +156,20 @@ INT WINAPI WinMain(HINSTANCE instance,
         
         MSG message;
         while(PeekMessage(&message, 0, 0, 0, PM_REMOVE)){
-
+            
             TranslateMessage(&message);
             DispatchMessageA(&message);
-
+            
+        }
+        
+        {
+            glClearColor(0, 0xff, 0, 0);
+            glClear(GL_COLOR_BUFFER_BIT);
+            SwapBuffers(global_device_context);
         }
     }
-
-quit:;
+    
+    quit:;
     
     return(0);
 }
