@@ -64,6 +64,7 @@ internal b32 w32_init_opengl(HWND window){
         pfd.cStencilBits = 8; // Number of bits for the stencilbuffer.
         pfd.iLayerType = PFD_MAIN_PLANE;
     }
+
     
     global_device_context = GetDC(window);
     global_opengl_rendering_context = wglCreateContext(global_device_context);
