@@ -67,9 +67,16 @@ internal b32 w32_init_opengl(HWND window){
 
     
     global_device_context = GetDC(window);
+
+    pixel_format = ChoosePixelFormat(global_device_context, &pfd);
+    SetPixelFormat(global_device_context,
+                   pixel_format,
+                   &pfd);
+    
     global_opengl_rendering_context = wglCreateContext(global_device_context);
-    if(wglMakeCurretn(global_device_context,
+    if(wglMakeCurrent(global_device_context,
                       global_opengl_rendering_context)){
+        MessageBox(0, (char *)glGetString(GL_VERSION), "OpenGL version", 0);
     }
     else{
         // TODO: error handling.
@@ -92,6 +99,7 @@ LRESULT w32_window_proc(HWND window,
         }break;
         case(WM_CREATE):{
 
+#if 0
             // NOTE: describes the pixel format of a drawing surface. 
             PIXELFORMATDESCRIPTOR pfd = {0};
             
@@ -119,7 +127,9 @@ LRESULT w32_window_proc(HWND window,
                            global_opengl_rendering_context);
             
             MessageBoxA(0, (char *)glGetString(GL_VERSION), "OpenGL Version", 0);
-            
+#else
+            w32_init_opengl(window);
+#endif
         }break;
         case(WM_SIZE):{
 #if 0
