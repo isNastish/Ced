@@ -18,6 +18,9 @@ typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
+typedef s32 bool32;
+typedef bool32 b32;
+
 typedef float real32;
 typedef double real64;
 
@@ -37,15 +40,31 @@ global HGLRC global_opengl_rendering_context;
 internal W32_WindowDim w32_get_window_dimension(HWND window){
     W32_WindowDim dimension = {0};
     
-    RECT window_rect = {0};
-    GetClientRect(window, &window_rect);
-    dimension.width = window_rect.right - window_rect.left;
-    dimension.height = window_rect.bottom - window_rect.top;
+    RECT client_rect = {0};
+    GetClientRect(window, &client_rect);
+    dimension.width = client_rect.right - client_rect.left;
+    dimension.height = client_rect.bottom - client_rect.top;
     
     return(dimension);
 }
 
-internal void w32_init_opengl(HWND window){
+internal b32 w32_init_opengl(HWND window){
+    b32 result = 0;
+
+    s32 pixel_format = 0;
+    PIXELFORMATDESCRIPTOR pfd = {0};
+    
+    {
+        pfd.nSize = sizeof(PIXELFORMATDESCRIPTOR);
+        pfd.nVersion = 1;
+        pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+        pfd.iPixelType = PFD_TYPE_RGBA; // The kind of framebuffer, RGBA or palette.
+        pfd.cColorBits = 32; // Color depth of the framebuffer.
+        pfd.cDepthBits = 24; // Number of bits for the depthbuffer.
+        pfd.cStencilBits = 8; // Number of bits for the stencilbuffer.
+        pfd.iLayerType = PFD_MAIN_PLANE;
+    }
+    
     global_device_context = GetDC(window);
     global_opengl_rendering_context = wglCreateContext(global_device_context);
     if(wglMakeCurretn(global_device_context,
@@ -54,6 +73,8 @@ internal void w32_init_opengl(HWND window){
     else{
         // TODO: error handling.
     }
+
+    return(result);
 }
 
 LRESULT w32_window_proc(HWND window,
@@ -98,6 +119,15 @@ LRESULT w32_window_proc(HWND window,
             
             MessageBoxA(0, (char *)glGetString(GL_VERSION), "OpenGL Version", 0);
             
+        }break;
+        case(WM_SIZE):{
+#if 0
+            W32_WindowDim dim = w32_get_window_dimension(window);
+            glViewport(0, 0, dim.width, dim.height);
+            glClearColor(0, 0xff, 0, 0);
+            glClear(GL_COLOR_BUFFER_BIT);
+            SwapBuffers(global_device_context);
+#endif
         }break;
         default:{
             result = DefWindowProc(window, msg, w_param, l_param);
@@ -163,7 +193,9 @@ INT WINAPI WinMain(HINSTANCE instance,
         }
         
         {
-            glClearColor(0, 0xff, 0, 0);
+            W32_WindowDim dim = w32_get_window_dimension(window_handle);
+            glViewport(0, 0, dim.width, dim.height); // NOTE: specifies the boundaries of what you're trying to render.
+            glClearColor(0, 0xff, 0, 0); // NOTE: normalized automatically.
             glClear(GL_COLOR_BUFFER_BIT);
             SwapBuffers(global_device_context);
         }
