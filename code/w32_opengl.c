@@ -1,8 +1,19 @@
 
 
-internal void *w32_load_opengl_proc(char *proc_name){
+internal void *w32_load_opengl_procedure(char *proc_name){
+    // NOTE: proc_name can be an OpenGL function or a platform-specific WGL function.
+#if defined(WIN32)
     void *proc = (void *)wglGetProcAddress(proc_name);
-    if(!proc){
+#elif UNIX
+    void *proc = (void *)glXGetProcAddress(proc_name);
+#else // OS X
+    // NOTE: Metal
+#endif
+    if(!proc ||
+       (proc == (void *)0x1) ||
+       (proc == (void *)0x2) ||
+       (proc == (void *)0x3) ||
+       (proc == (void *)-1)){
         return(0);
     }
     return(proc);
@@ -66,7 +77,40 @@ internal b32 w32_init_opengl(HWND window){
         // TODO: error handling.
     }
 
+    // NOTE: Should I call ReleaseDC()?
     return(result);
 }
 
+/*
+alphabet_quote:
+{
+    Here is some text for typing.
+    It's very simple. But I have to find a way how to parse it using C programming language.
 
+};
+
+alphabet_quote:
+{
+    Here is some text for typing.
+    It's very simple. But I have to find a way how to parse it using C programming language.
+
+};
+
+alphabet_quote:
+{
+    Here is some text for typing.
+    It's very simple. But I have to find a way how to parse it using C programming language.
+
+};
+
+alphanumerical_quote:
+{
+    This quote includes number and letters. Numbers like this and quotes: 
+};
+
+numerical_quote:
+{
+    1245 4 5 3344 89887 2890078 344 8932
+};
+
+*/

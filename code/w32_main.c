@@ -94,7 +94,7 @@ INT WINAPI WinMain(HINSTANCE instance,
     WNDCLASSA window_class = {0};
     
     {
-        window_class.style = CS_HREDRAW | CS_VREDRAW;
+        window_class.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
         window_class.lpfnWndProc = w32_window_proc;
         window_class.hInstance = global_instance_handle;
         //window_class.hIcon = ;
@@ -141,13 +141,20 @@ INT WINAPI WinMain(HINSTANCE instance,
         {
             W32_WindowDim dim = w32_get_window_dimension(window_handle);
             glViewport(0, 0, dim.width, dim.height); // NOTE: specifies the boundaries of what you're trying to render.
-            glClearColor(0, 0xff, 0, 0); // NOTE: normalized automatically.
+            glClearColor((f32)192/(f32)255, 0xff, (f32)62/(f32)255, 0); // NOTE: normalized automatically.
             glClear(GL_COLOR_BUFFER_BIT);
             SwapBuffers(global_device_context);
         }
     }
     
     quit:;
-    
+
+    // STUDY: Do I need it?
+#if 0
+    {
+        wglMakeCurrent(global_device_context, 0);
+        wglDeleteContext(global_opengl_rendering_context);
+    }
+#endif
     return(0);
 }
