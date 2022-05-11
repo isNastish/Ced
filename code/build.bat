@@ -1,9 +1,6 @@
 
 @echo off
 
-set common_compiler_flags=/nologo /TC /Zi /FC 
-set common_linker_flags=user32.lib gdi32.lib winmm.lib opengl32.lib
-
 REM -E - copies preprocessor output to standart output.
 REM -EP - copies preprocessor output to standart output.
 REM -P - writes preprocessor output to a file.
@@ -32,8 +29,10 @@ REM -wd<number> - disable the specific warning.
 
 REM -Zi - generates complete debugging information.
 
-IF NOT EXIST ..\..\build (mkdir ..\..\build)
+set common_compiler_flags=/nologo /TC /Zi /FC 
+set common_linker_flags=user32.lib kernel32.lib gdi32.lib opengl32.lib
 
+if not exist ..\..\build (mkdir ..\..\build)
 pushd ..\..\build
 
 cl ^

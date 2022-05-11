@@ -1,14 +1,9 @@
 
 
-#include <windows.h>
-#include <stdio.h>
-#include <malloc.h>
 #include <stdint.h>
+#include <windows.h>
+#include <xinput.h>
 #include <gl/gl.h>
-
-// external
-#define STB_TRUETYPE_IMPLEMENTATION 
-#include "external/stb_truetype.h"
 
 #define global static
 #define internal static
@@ -33,260 +28,273 @@ typedef double real64;
 typedef real32 f32;
 typedef real64 f64;
 
-typedef struct W32_WindowDim{
+// NOTE: Structs:
+typedef struct W32_WindowDimension W32_WindowDimension;
+struct W32_WindowDimension{
     s32 width;
     s32 height;
-}W32_WindowDim;
+};
 
-typedef struct W32_Bitmap{
+typedef struct W32_Bitmap W32_Bitmap;
+struct W32_Bitmap{
     BITMAPINFO info;
-    void *mem;
-    u32 width;
-    u32 height;
+    void *memory;
+    s32 width;
+    s32 height;
     u32 pitch;
-}W32_Bitmap;
+};
 
-global s8 global_running;
-global HWND global_window_handle;
-global HINSTANCE global_instance_handle;
-global HDC global_device_context;
-global HGLRC global_opengl_rendering_context;
-global W32_Bitmap global_offscreen_bitmap;
-
-// OpenGL
-#include "w32_opengl.c"
-
-internal char *read_entire_file_into_mem(char *file_name){
-    char *result = 0;
-
-    FILE *file = fopen(file_name, "rb");
-    if(file){
-        size_t file_size = 0;
-        fseek(file, 0, SEEK_END);
-        file_size = ftell(file);
-        fseek(file, 0, SEEK_SET);
-
-        result = (char *)malloc(file_size + 1);
-        fread(result, file_size, 1, file);
-        result[file_size] = 0;
-
-        fclose(file);
-    }
-    
-    return(result);
-}
-
-internal void stbtt_test(W32_Bitmap *bitmap){
-    char *ttf_buffer = read_entire_file_into_mem("c:/windows/fonts/arial.ttf");
-    
-    stbtt_fontinfo font;
-
-    stbtt_InitFont(&font, (u8 *)ttf_buffer, stbtt_GetFontOffsetForIndex(ttf_buffer, 0));
-
-    
-
-#if 0
-    // NOTE: top-to-bottom bitmap. So we have to do a flip.
-    u8 *mono_bitmap = (u8 *)stbtt_GetCodepointBitmap(&font,
-                                                     0,
-                                                     stbtt_ScaleForPixelHeight(&font, 256.0f),
-                                                     'a', // glyph to be rendered.
-                                                     &width,
-                                                     &height,
-                                                     &x_offset,
-                                                     &y_offset);
-#endif
-    
-    // Kavabanga
-
-    enum {N=13};
-    
-    u8 *kavabanga_glyphs[N];
-    s32 kavabanga_spelling[] = {'k', 'a', 'v', 'a', 'b', 'a', 'n', 'g', 'a', '1', '2', '3', 555};
-    s32 width, height, x_offset, y_offset;
-    u8 *starting_point = (u8 *)bitmap->mem;
-    
-    
-    
-    for(s32 x = 0;
-        x < N;
-        ++x){
-        kavabanga_glyphs[x] =
-            (u8 *)stbtt_GetCodepointBitmap(&font,
-                                           0,
-                                           stbtt_ScaleForPixelHeight(&font, 128.0f),
-                                           kavabanga_spelling[x],
-                                           &width,
-                                           &height,
-                                           &x_offset,
-                                           &y_offset);
+typedef struct GamepadInput GamepadInput;
+struct GamepadInput{
+    u8 is_connected;
+    struct
+    {
+        b32 dpad_up;
+        b32 dpad_down;
+        b32 dpad_left;
+        b32 dpad_right;
         
-        u8 *source = kavabanga_glyphs[x];
-        u8 *dest_row = (u8 *)starting_point;
-        for(u32 y = 0;
-            y < height;
-            ++y){
-            u32 *dest = (u32 *)dest_row;
-            for(u32 x = 0;
-                x < width;
-                ++x){
-                u8 alpha = *source++;
-                if(alpha){
-                    *dest = ((alpha << 24) |
-                             (alpha << 16) |
-                             (alpha << 8) |
-                             (alpha << 0));
-                }
-                dest++;
-            }
-            dest_row += bitmap->pitch;
-        }
-
-        (u32 *)starting_point += width;
+        b32 start;
+        b32 back;
         
-        stbtt_FreeBitmap(kavabanga_glyphs[x], 0);
+        b32 left_thumb;
+        b32 right_thumb;
+        
+        b32 left_shoulder;
+        b32 right_shoulder;
+        
+        b32 A_button;
+        b32 B_button;
+        b32 X_button;
+        b32 Y_button;
+        
+        b32 left_trigger;
+        b32 right_trigger;
+        
+        s16 left_thumbstick_x;
+        s16 left_thumbstick_y;
+        s16 right_thumbstick_x;
+        s16 right_thumbstick_y;
+    };
+};
+
+typedef struct GameState GameState;
+struct GameState{
+    void *game_memory; // NOTE: not used for now.
+    s32 game_is_running;
+    W32_Bitmap offscreen_bitmap;
+    GamepadInput gamepad_input[4];
+};
+
+// NOTE: Function definitions:
+internal W32_WindowDimension w32_get_window_dimension(HWND window_handle);
+internal void w32_resize_dib_section(W32_Bitmap *bitmap, s32 window_width, s32 window_height);
+internal void w32_display_offscreen_buffer_in_window(W32_Bitmap *offscreen_bitmap,
+                                                     HDC device_context,
+                                                     s32 window_width,
+                                                     s32 window_height);
+internal void w32_load_xinput(void);
+internal void w32_init_opengl(HWND window_handle);
+
+// NOTE: Global variables:
+global GameState global_game_state;
+
+internal void w32_init_opengl(HWND window_handle){
+    s32 pixel_format = 0;
+    PIXELFORMATDESCRIPTOR pfd = {0};
+    {
+        pfd.nSize = sizeof(PIXELFORMATDESCRIPTOR);
+        pfd.nVersion = 1;
+        pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL | PFD_DOUBLEBUFFER;
+        pfd.iPixelType = PFD_TYPE_RGBA; // NOTE: the kind of framebuffer, RGBA or palette.
+        pfd.cColorBits = 32; // NOTE: Color depth of the framebuffer.
+        pfd.cDepthBits = 24; // NOTE: Number of bits for the depthbuffer.
+        pfd.cStencilBits = 8; // NOTE: Number of bits for the stencilbuffer.
+        pfd.iLayerType = PFD_MAIN_PLANE;
     }
 
-#if 0
-    u8 *source = mono_bitmap;
-    u8 *dest_row = (u8 *)bitmap->mem + (bitmap->pitch * 50) + 100;
-    for(u32 y = 0;
-        y < height;
-        ++y){
-        u32 *dest = (u32 *)dest_row;
-        for(u32 x = 0;
-            x < width;
-            ++x){
-            u8 alpha = *source++;
-            if(alpha){
-                *dest = ((alpha << 24) |
-                         (alpha << 16) |
-                         (alpha << 8) |
-                         (alpha << 0));
+    HDC device_context = GetDC(window_handle);
+
+    if((pixel_format = ChoosePixelFormat(device_context, &pfd)) != 0){
+        if(SetPixelFormat(device_context, pixel_format, &pfd) == TRUE){
+            HGLRC opengl_dummy_context = wglCreateContext(device_context);
+        
+            if(wglMakeCurrent(device_context, opengl_dummy_context)){
+                char opengl_version_buf[128];
+                sprintf_s(opengl_version_buf,
+                          sizeof(opengl_version_buf),
+                          "OpenGL version: %s.\n",
+                          (char *)glGetString(GL_VERSION));
+                OutputDebugStringA(opengl_version_buf);
             }
-            dest++;
+            else{
+                // TODO: error handling.
+            }
         }
-        dest_row += bitmap->pitch;
-    }
-    stbtt_FreeBitmap(mono_bitmap, 0);
-#endif
-}
-
-internal void w32_render(W32_Bitmap *bitmap){
-    u32 dest_width = bitmap->width;
-    u32 dest_height = bitmap->height;
-    u32 *dest = (u32 *)bitmap->mem;
-    for(u32 y = 0;
-        y < dest_height;
-        y++){
-        for(u32 x = 0;
-            x < dest_width;
-            x++){
-            *dest++ = (64 | (64 << 8) | (64 << 16));
+        else{
+            // TODO: error handling.
         }
     }
+    else{
+        // TODO: error handling.
+    }
+    ReleaseDC(window_handle, device_context);
 }
 
-internal W32_WindowDim w32_get_window_dimension(HWND window){
-    W32_WindowDim dimension = {0};
+#define XINPUT_GET_STATE(name) DWORD WINAPI name(DWORD dw_user_index, XINPUT_STATE* p_state)
+typedef XINPUT_GET_STATE(xinput_get_state);
+XINPUT_GET_STATE(XInputGetStateStub)
+{
+    return(ERROR_DEVICE_NOT_CONNECTED);
+}
+global xinput_get_state *XInputGetStatePtr = XInputGetStateStub;
+#define XInputGetState XInputGetStatePtr
+
+#define XINPUT_SET_STATE(name) DWORD WINAPI name(DWORD dw_user_index, XINPUT_VIBRATION* p_vibration)
+typedef XINPUT_SET_STATE(xinput_set_state);
+XINPUT_SET_STATE(XInputSetStateStub)
+{
+    return(ERROR_DEVICE_NOT_CONNECTED);
+}
+global xinput_set_state *XInputSetStatePtr = XInputSetStateStub;
+#define XInputSetState XInputSetStatePtr
+
+internal void w32_load_xinput(void){
+    HMODULE xinput_lib = LoadLibraryA("xinput1_4.dll");
+    if(!xinput_lib){
+        xinput_lib = LoadLibraryA("xinput9_1_0.dll");
+    }
+    if(!xinput_lib){
+        xinput_lib = LoadLibraryA("xinput1_3.dll");
+    }
+
+    if(xinput_lib){
+        XInputGetStatePtr = (xinput_get_state *)GetProcAddress(xinput_lib, "XInputGetState");
+        if(!XInputGetStatePtr){
+            XInputGetStatePtr = XInputGetStateStub;
+        }
+        XInputSetStatePtr = (xinput_set_state *)GetProcAddress(xinput_lib, "XInputSetState");
+        if(!XInputSetStatePtr){
+            XInputSetStatePtr = XInputSetStateStub;
+        }
+    }
+    else{
+        // TODO: error handling (unable to load xinput.dll).
+    }
+}
+
+internal W32_WindowDimension w32_get_window_dimension(HWND window_handle){
+    W32_WindowDimension window_dimension = {0};
     
     RECT client_rect = {0};
-    GetClientRect(window, &client_rect);
-    dimension.width = client_rect.right - client_rect.left;
-    dimension.height = client_rect.bottom - client_rect.top;
+    GetClientRect(window_handle, &client_rect);
+    window_dimension.width = client_rect.right - client_rect.left;
+    window_dimension.height = client_rect.bottom - client_rect.top;
     
-    return(dimension);
+    return(window_dimension);
 }
 
-internal w32_resize_dib_section(W32_Bitmap *bitmap, u32 width, u32 height){
-    // STUDY: Do I really need it?
-#if 0
-    if(bitmap->mem){
-        VirtualFree(bitmap->mem, 0, MEM_RELEASE);
+internal void w32_resize_dib_section(W32_Bitmap *bitmap, s32 window_width, s32 window_height){
+    if(bitmap->memory){
+        VirtualFree(bitmap->memory, 0, MEM_RELEASE);
     }
-#endif
     
-    bitmap->width = width;
-    bitmap->height = height;
+    bitmap->width = window_width;
+    bitmap->height = window_height;
     
     bitmap->info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
     bitmap->info.bmiHeader.biWidth = bitmap->width;
     bitmap->info.bmiHeader.biHeight = -bitmap->height; // NOTE: top-down dib (origin in the upper-left corner).
     bitmap->info.bmiHeader.biPlanes = 1;
     bitmap->info.bmiHeader.biBitCount = 32;
-    bitmap->info.bmiHeader.biCompression = BI_RGB; // NOTE: an uncompressed format.
+    bitmap->info.bmiHeader.biCompression = BI_RGB;
 
     u32 bpp = 4; // NOTE: bytes per pixel.
     u32 bitmap_size = (bitmap->width * bitmap->height) * bpp;
 
-    bitmap->mem = (void *)VirtualAlloc(0,
-                                       bitmap_size,
-                                       MEM_COMMIT | MEM_RESERVE,
-                                       PAGE_READWRITE);
+    bitmap->memory = VirtualAlloc(0, bitmap_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    bitmap->pitch = (bitmap->width * bpp);
+}
 
-    bitmap->pitch = bitmap->width * bpp;
-    
-    if(!bitmap->mem){
+internal void w32_display_offscreen_buffer_in_window(W32_Bitmap *offscreen_bitmap,
+                                                     HDC device_context,
+                                                     s32 window_width,
+                                                     s32 window_height){
+    s32 scanlines_count = StretchDIBits(device_context,
+                                        0, 0,
+                                        window_width,
+                                        window_height,
+                                        0, 0,
+                                        offscreen_bitmap->width,
+                                        offscreen_bitmap->height,
+                                        offscreen_bitmap->memory,
+                                        &offscreen_bitmap->info,
+                                        DIB_RGB_COLORS,
+                                        SRCCOPY);
+    if(!scanlines_count){
         // TODO: error handling.
-    }
-    else{
-        // Success.
-        ;
-        
     }
 }
 
-internal void w32_update_window(HDC device_context, u32 window_width, u32 window_height){
-    s32 stretch_result = StretchDIBits(device_context,
-                                       0, 0,
-                                       window_width,
-                                       window_height,
-                                       0, 0,
-                                       global_offscreen_bitmap.width,
-                                       global_offscreen_bitmap.height,
-                                       global_offscreen_bitmap.mem,
-                                       &global_offscreen_bitmap.info,
-                                       DIB_RGB_COLORS,
-                                       SRCCOPY);
-    if(!stretch_result){
-        // TODO: error handling.
-    }
-    else{
-        // Success.
-        OutputDebugStringA("Success!");
-    }
-}
-
-LRESULT w32_window_proc(HWND window,
-                        UINT msg,
-                        WPARAM w_param,
-                        LPARAM l_param){
+LRESULT CALLBACK w32_main_window_proc(HWND window_handle, UINT message, WPARAM w_param, LPARAM l_param){
     LRESULT result = 0;
     
-    switch(msg){
-        case(WM_CLOSE):
-        case(WM_DESTROY ):
-        case(WM_QUIT):{
-            global_running = 0;
-        }break;
+    switch(message){
         case(WM_CREATE):{ 
-            w32_init_opengl(window);
+            w32_init_opengl(window_handle);
         }break;
-        case(WM_SIZE):{
-#if 0
-            W32_WindowDim dim = w32_get_window_dimension(window);
-            
-            glViewport(0, 0, dim.width, dim.height);
-            glClearColor(0, 0xff, 0, 0);
-            glClear(GL_COLOR_BUFFER_BIT);
-            SwapBuffers(global_device_context);
-#endif
-        }break;
+        case(WM_CLOSE):{
+            global_game_state.game_is_running = 0;
+        };
+        case(WM_DESTROY ):{
+            PostQuitMessage(0);
+        };
+        case(WM_SYSKEYDOWN):
+        case(WM_SYSKEYUP):
+        case(WM_KEYDOWN):
+        case(WM_KEYUP):{
+            s32 vk_code = w_param;
+            s32 was_down = ((l_param & (1 << 30)) != 0);
+            s32 is_down = ((l_param & (1 << 31)) == 0);
+
+            if(was_down != is_down){
+                if(vk_code == VK_SHIFT){
+                    OutputDebugStringA("SHIFT\n");
+                }
+                else if(vk_code == VK_BACK){
+                    OutputDebugStringA("BACK\n");
+                }
+                else if(vk_code == VK_SPACE){
+                    OutputDebugStringA("SPACE\n");
+                }
+                else if((vk_code == VK_F4) && (l_param & (1 << 29))){
+                    OutputDebugStringA("ALT+F4\n");
+                }
+                else if(vk_code == 'A'){
+                    OutputDebugStringA("A\n");
+                }
+                else if(vk_code == 'W'){
+                    OutputDebugStringA("W\n");
+                }
+                else if(vk_code == 'S'){
+                    OutputDebugStringA("S\n");
+                }
+                else if(vk_code == 'D'){
+                    OutputDebugStringA("D\n");
+                }
+                else if(vk_code == 'Q'){
+                    OutputDebugStringA("Q\n");
+                }
+                else if(vk_code == 'E'){
+                    OutputDebugStringA("E\n");
+                }
+            }
+            result = DefWindowProc(window_handle, message, w_param, l_param);
+        };
         default:{
-            result = DefWindowProc(window, msg, w_param, l_param);
+            result = DefWindowProc(window_handle, message, w_param, l_param);
         }break;
     }
-    
     return(result);
 }
 
@@ -295,26 +303,20 @@ INT WINAPI WinMain(HINSTANCE instance,
                    HINSTANCE prev_instance,
                    PSTR cmd_line,
                    int show_code){
-
-    //stbtt_test(0);
-    
-    global_instance_handle = instance;
+    w32_load_xinput();
     
     WNDCLASSA window_class = {0};
-    
     {
         window_class.style = CS_HREDRAW | CS_VREDRAW | CS_OWNDC;
-        window_class.lpfnWndProc = w32_window_proc;
-        window_class.hInstance = global_instance_handle;
+        window_class.lpfnWndProc = w32_main_window_proc;
+        window_class.hInstance = instance;
         //window_class.hIcon = ;
         //window_class.hCursor = ;
         window_class.hbrBackground = (HBRUSH)GetStockObject(DKGRAY_BRUSH);
         window_class.lpszClassName = "AppWindowClass";
     }
     
-    
     if(!RegisterClassA(&window_class)){
-        // TODO: error handling.
         goto quit;
     }
     
@@ -327,63 +329,82 @@ INT WINAPI WinMain(HINSTANCE instance,
                                         CW_USEDEFAULT,
                                         CW_USEDEFAULT,
                                         0, 0,
-                                        global_instance_handle,
+                                        instance,
                                         0);
     
     if(!window_handle){
-        // TODO: error handling.
         goto quit;
-        
     }
 
-    W32_WindowDim dimension = w32_get_window_dimension(window_handle);
-    
-    w32_resize_dib_section(&global_offscreen_bitmap,
-                           dimension.width,
-                           dimension.height);
-    w32_render(&global_offscreen_bitmap);
-
-    stbtt_test(&global_offscreen_bitmap);
-    
-    global_running = 1;
-    while(global_running){
+    global_game_state.game_is_running = 1;
+    while(global_game_state.game_is_running){
         
         MSG message;
+        
         while(PeekMessage(&message, 0, 0, 0, PM_REMOVE)){
             TranslateMessage(&message);
             DispatchMessageA(&message);
-            
         }
 
-        HDC device_context = GetDC(window_handle);
+        // XInput:
+        s32 gamepad_id;
+        for(gamepad_id = 0;
+            gamepad_id < XUSER_MAX_COUNT;
+            ++gamepad_id){
+            XINPUT_STATE controller_state = {0};
 
-        w32_update_window(device_context,
-                          dimension.width,
-                          dimension.height);
+            if(XInputGetState(gamepad_id, &controller_state) == ERROR_SUCCESS){
+                // NOTE: Controller is connected.
+                XINPUT_GAMEPAD *pad = &controller_state.Gamepad;
+
+                global_game_state.gamepad_input[gamepad_id].dpad_up = (pad->wButtons & XINPUT_GAMEPAD_DPAD_UP);
+                global_game_state.gamepad_input[gamepad_id].dpad_down = (pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN);
+                global_game_state.gamepad_input[gamepad_id].dpad_left = (pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT);
+                global_game_state.gamepad_input[gamepad_id].dpad_right = (pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT);
+                
+                global_game_state.gamepad_input[gamepad_id].start = (pad->wButtons & XINPUT_GAMEPAD_START);
+                global_game_state.gamepad_input[gamepad_id].back = (pad->wButtons & XINPUT_GAMEPAD_BACK);
+                
+                global_game_state.gamepad_input[gamepad_id].left_thumb = (pad->wButtons & XINPUT_GAMEPAD_LEFT_THUMB);
+                global_game_state.gamepad_input[gamepad_id].right_thumb = (pad->wButtons & XINPUT_GAMEPAD_RIGHT_THUMB);
+                
+                global_game_state.gamepad_input[gamepad_id].left_shoulder = (pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER);
+                global_game_state.gamepad_input[gamepad_id].right_shoulder = (pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER);
+
+                global_game_state.gamepad_input[gamepad_id].A_button = (pad->wButtons & XINPUT_GAMEPAD_A);
+                global_game_state.gamepad_input[gamepad_id].B_button = (pad->wButtons & XINPUT_GAMEPAD_B);
+                global_game_state.gamepad_input[gamepad_id].X_button = (pad->wButtons & XINPUT_GAMEPAD_X);
+                global_game_state.gamepad_input[gamepad_id].Y_button = (pad->wButtons & XINPUT_GAMEPAD_Y);
+
+                global_game_state.gamepad_input[gamepad_id].left_trigger = pad->bLeftTrigger;
+                global_game_state.gamepad_input[gamepad_id].right_trigger = pad->bRightTrigger;
+
+                global_game_state.gamepad_input[gamepad_id].left_thumbstick_x = pad->sThumbLX;
+                global_game_state.gamepad_input[gamepad_id].left_thumbstick_y = pad->sThumbLY;
+                global_game_state.gamepad_input[gamepad_id].right_thumbstick_x = pad->sThumbRX;
+                global_game_state.gamepad_input[gamepad_id].right_thumbstick_y = pad->sThumbRY;
+            }
+            else{
+                // NOTE: Controller is not connected.
+            }
+
+            // NOTE: Controller test.
+            XINPUT_VIBRATION xinput_vibration = {0};
+            {
+                xinput_vibration.wLeftMotorSpeed = 65535;
+                xinput_vibration.wRightMotorSpeed = 65535;
+            }
+            XInputSetState(gamepad_id, &xinput_vibration);
+        }
+
         
-        {
-            
-    
-            //StretchDIBits();
-#if 0
-            W32_WindowDim dim = w32_get_window_dimension(window_handle);
-            glViewport(0, 0, dim.width, dim.height); // NOTE: specifies the boundaries of what you're trying to render.
-            glClearColor((f32)192/(f32)255, 0xff, (f32)62/(f32)255, 0); // NOTE: normalized automatically.
-            glClear(GL_COLOR_BUFFER_BIT);
-            SwapBuffers(global_device_context);
-#endif
-        }
+        // OpenGL
+        glClearColor(180.0/255.0, 180.0/255.0, 67.0/255.0, 0);
+        glClear(GL_COLOR_BUFFER_BIT);
+        HDC device_context = GetDC(window_handle);
+        SwapBuffers(device_context);
         ReleaseDC(window_handle, device_context);
     }
-    
-    quit:;
-
-    // STUDY: Do I need it?
-#if 0
-    {
-        wglMakeCurrent(global_device_context, 0);
-        wglDeleteContext(global_opengl_rendering_context);
-    }
-#endif
+quit:;
     return(0);
 }
