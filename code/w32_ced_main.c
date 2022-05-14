@@ -528,7 +528,7 @@ INT WINAPI WinMain(HINSTANCE instance,
 
         
         // OpenGL
-        glClearColor(180.0/255.0, 180.0/255.0, 67.0/255.0, 0);
+        glClearColor(28./255., 28./255., 28./255., 0);
         glClear(GL_COLOR_BUFFER_BIT);
 
         HDC device_context = GetDC(window_handle);
