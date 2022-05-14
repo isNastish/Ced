@@ -1,13 +1,19 @@
 
-
+#include <stdio.h>
 #include <stdint.h>
 #include <windows.h>
 #include <xinput.h>
 #include <gl/gl.h>
 
+// NOTE: external.
+#define STB_TRUETYPE_IMPLEMENTATION
+#include "ext/stb_truetype.h"
+
 #define global static
 #define internal static
 #define local_persist static
+
+#define const
 
 typedef int8_t s8;
 typedef int16_t s16;
@@ -29,10 +35,57 @@ typedef real32 f32;
 typedef real64 f64;
 
 // NOTE: Structs:
+typedef enum KeyCode KeyCode;
+enum KeyCode{
+    Key_Alt_F4, 
+    Key_F4, 
+    Key_Space,
+    Key_ArrowUp,
+    Key_ArrowDown,
+    Key_ArrowLeft,
+    Key_ArrowRight,
+    Key_CapsLock, 
+    Key_Escape, 
+    Key_Shift,
+    Key_Asign,
+    Key_Minus,
+    Key_Period,
+    Key_Comman,
+    Key_ForwardSlash,
+    Key_Tilda,
+    Key_LeftBracket,
+    Key_RightBracket,
+};
+
+typedef enum KeyModifiers KeyModifiers;
+enum KeyModifiers{
+    KeyMod_Ctrl, 
+    KeyMod_Shift,
+    KeyMod_Alt,
+};
+
+typedef struct OsLayer OsLayer;
+struct OsLayes{
+    u32 i;
+    // TODO: Implement.
+};
+
+typedef struct W32_Timer W32_Timer;
+struct W32_Perf{
+    LARGE_INTEGER ticks_per_second;
+    // TODO: Finish.
+};
+
 typedef struct W32_WindowDimension W32_WindowDimension;
 struct W32_WindowDimension{
     s32 width;
     s32 height;
+};
+
+typedef struct W32_FileReadResult W32_FileReadResult;
+struct W32_FileReadResult{
+    void *contents;
+    u32 contents_size;
 };
 
 typedef struct W32_Bitmap W32_Bitmap;
@@ -78,13 +131,8 @@ struct GamepadInput{
     };
 };
 
-typedef struct GameState GameState;
-struct GameState{
-    void *game_memory; // NOTE: not used for now.
-    s32 game_is_running;
-    W32_Bitmap offscreen_bitmap;
-    GamepadInput gamepad_input[4];
-};
+global u8 global_running;
+global W32_Bitmap global_offscreen_bitmap;
 
 // NOTE: Function definitions:
 internal W32_WindowDimension w32_get_window_dimension(HWND window_handle);
@@ -95,9 +143,78 @@ internal void w32_display_offscreen_buffer_in_window(W32_Bitmap *offscreen_bitma
                                                      s32 window_height);
 internal void w32_load_xinput(void);
 internal void w32_init_opengl(HWND window_handle);
+internal void w32_init_stbtt(void); // TODO: Implement.
+internal W32_FileReadResult w32_read_entire_file_into_memory(const char *file_name); // TODO: Implement.
+internal b32 w32_does_file_exist(const char *file_name);
+internal void w32_timer_begin_frame(W32_Timer *timer); // TODO: Implement.
+internal void w32_timer_end_frame(W32_Timer *timer, f64 frames_per_second); // TODO: Implement.
 
-// NOTE: Global variables:
-global GameState global_game_state;
+
+// NOTE: test stb_truetype.h
+global u8 ttf_buffer[1 << 20];
+global u8 temp_bitmap[512*512];
+
+global stbtt_bakedchar cdata[96];
+GLuint ftex;
+
+internal void my_stbtt_init_font(void){
+    fread(ttf_buffer, 1, 1<<20, fopen("c:/windows/fonts/times.ttf", "rb"));
+
+    stbtt_BakeFontBitmap(ttf_buffer, 0, 32.0, temp_bitmap, 512, 512, 32, 96, cdata);
+
+    glGenTextures(1, &ftex);
+    glBindTexture(GL_TEXTURE_2D, ftex);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, 512, 512, 0, GL_ALPHA, GL_UNSIGNED_BYTE, temp_bitmap);
+    
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+}
+
+internal void my_stbtt_print_text(f32 x, f32 y, const char *text){
+    // assume ortographic projection with units = screen pixels, origin at top left.
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glEnable(GL_TEXTURE_2D);
+    glBindTexture(GL_TEXTURE_2D, ftex);
+    glBegin(GL_QUADS);
+    while(*text){
+        if(*text >= 32 && *text < 128){
+            stbtt_aligned_quad q;
+            stbtt_GetBakedQuad(cdata, 512, 512, *text-32, &x, &y, &q, 1);
+            glTexCoord2f(q.s0, q.t0); glVertex2f(q.x0, q.y0);
+            glTexCoord2f(q.s1, q.t0); glVertex2f(q.x1, q.y0);
+            glTexCoord2f(q.s1, q.t1); glVertex2f(q.x1, q.y1);
+            glTexCoord2f(q.s0, q.t1); glVertex2f(q.x0, q.y1);
+        }
+        ++text;
+    }
+    glEnd();
+}
+
+internal void w32_timer_begin_frame(W32_Timer *timer){
+    
+}
+
+internal void w32_timer_end_frame(W32_Timer *timer, f64 frames_per_second){
+    
+}
+
+// NOTE: I have to specify a full path to the file.
+internal b32 w32_does_file_exist(const char *file_name){
+    b32 result = 1;
+    if(GetFileAttributesA(file_name) == INVALID_FILE_ATTRIBUTES){
+        result = 0;
+    }
+    return(result);
+}
+
+internal W32_FileReadResult w32_read_entire_file_into_memory(const char *file_name){
+    W32_FileReadResult file_result = {0};
+    
+    return(file_result);
+}
+
+internal void w32_init_stbtt(void){
+}
 
 internal void w32_init_opengl(HWND window_handle){
     s32 pixel_format = 0;
@@ -244,7 +361,7 @@ LRESULT CALLBACK w32_main_window_proc(HWND window_handle, UINT message, WPARAM w
             w32_init_opengl(window_handle);
         }break;
         case(WM_CLOSE):{
-            global_game_state.game_is_running = 0;
+            global_running = 0;
         };
         case(WM_DESTROY ):{
             PostQuitMessage(0);
@@ -257,39 +374,45 @@ LRESULT CALLBACK w32_main_window_proc(HWND window_handle, UINT message, WPARAM w
             s32 was_down = ((l_param & (1 << 30)) != 0);
             s32 is_down = ((l_param & (1 << 31)) == 0);
 
-            if(was_down != is_down){
-                if(vk_code == VK_SHIFT){
-                    OutputDebugStringA("SHIFT\n");
-                }
-                else if(vk_code == VK_BACK){
-                    OutputDebugStringA("BACK\n");
-                }
-                else if(vk_code == VK_SPACE){
-                    OutputDebugStringA("SPACE\n");
-                }
-                else if((vk_code == VK_F4) && (l_param & (1 << 29))){
-                    OutputDebugStringA("ALT+F4\n");
-                }
-                else if(vk_code == 'A'){
-                    OutputDebugStringA("A\n");
-                }
-                else if(vk_code == 'W'){
-                    OutputDebugStringA("W\n");
-                }
-                else if(vk_code == 'S'){
-                    OutputDebugStringA("S\n");
-                }
-                else if(vk_code == 'D'){
-                    OutputDebugStringA("D\n");
-                }
-                else if(vk_code == 'Q'){
-                    OutputDebugStringA("Q\n");
-                }
-                else if(vk_code == 'E'){
-                    OutputDebugStringA("E\n");
+            u64 key_code = 0;
+            
+            if(((vk_code >= 'A') && (vk_code <= 'Z')) ||
+               ((vk_code >= '0') && (vk_code <= '9'))){
+                char buf[8];
+                sprintf_s(buf, sizeof(buf), "%c\n", tolower((char)vk_code));
+                OutputDebugStringA(buf);
+            }
+            else{
+                switch(vk_code){
+                    case(VK_F4):{
+                        if(l_param & (1 << 29)){
+                            key_code = Key_Alt_F4;
+                        }
+                        else{
+                            key_code = Key_F4;
+                        }
+                    }break;
+                    case(VK_SPACE):{ key_code = Key_Space; }break;
+                    case(VK_UP):{ key_code = Key_ArrowUp; }break;
+                    case(VK_DOWN):{ key_code = Key_ArrowDown; }break;
+                    case(VK_LEFT):{ key_code = Key_ArrowLeft; }break;
+                    case(VK_RIGHT):{ key_code = Key_ArrowRight; }break;
+                    case(VK_CAPITAL):{
+                        key_code = Key_CapsLock;
+                    }break;
+                    case(VK_ESCAPE):{ key_code = Key_Escape; }break;
+                    case(VK_SHIFT):{ key_code = Key_Shift; }break;
+                    case(VK_OEM_PLUS):{ key_code = Key_Asign; }break; // STUDY:
+                    case(VK_OEM_MINUS):{ key_code = Key_Minus; }break;
+                    case(VK_OEM_PERIOD): { key_code = Key_Period; }break;
+                    case(VK_OEM_COMMA): { key_code = Key_Comman; }break;
+                    case(VK_OEM_2):{ key_code = Key_ForwardSlash; }break;
+                    case(VK_OEM_3):{ key_code = Key_Tilda; }break; // STUDY: 
+                    case(VK_OEM_4):{ key_code = Key_LeftBracket; }break;
+                    case(VK_OEM_6):{ key_code = Key_RightBracket; }break;
                 }
             }
-            result = DefWindowProc(window_handle, message, w_param, l_param);
+            DefWindowProc(window_handle, message, w_param, l_param);
         };
         default:{
             result = DefWindowProc(window_handle, message, w_param, l_param);
@@ -304,6 +427,8 @@ INT WINAPI WinMain(HINSTANCE instance,
                    PSTR cmd_line,
                    int show_code){
     w32_load_xinput();
+
+    w32_does_file_exist("w:/ced/code/w32_main.c");
     
     WNDCLASSA window_class = {0};
     {
@@ -336,8 +461,11 @@ INT WINAPI WinMain(HINSTANCE instance,
         goto quit;
     }
 
-    global_game_state.game_is_running = 1;
-    while(global_game_state.game_is_running){
+    my_stbtt_init_font();
+
+    
+    global_running = 1;
+    while(global_running){
         
         MSG message;
         
@@ -345,7 +473,8 @@ INT WINAPI WinMain(HINSTANCE instance,
             TranslateMessage(&message);
             DispatchMessageA(&message);
         }
-
+        
+        
         // XInput:
         s32 gamepad_id;
         for(gamepad_id = 0;
@@ -357,32 +486,32 @@ INT WINAPI WinMain(HINSTANCE instance,
                 // NOTE: Controller is connected.
                 XINPUT_GAMEPAD *pad = &controller_state.Gamepad;
 
-                global_game_state.gamepad_input[gamepad_id].dpad_up = (pad->wButtons & XINPUT_GAMEPAD_DPAD_UP);
-                global_game_state.gamepad_input[gamepad_id].dpad_down = (pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN);
-                global_game_state.gamepad_input[gamepad_id].dpad_left = (pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT);
-                global_game_state.gamepad_input[gamepad_id].dpad_right = (pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT);
+                b32 dpad_up = (pad->wButtons & XINPUT_GAMEPAD_DPAD_UP);
+                b32 dpad_down = (pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN);
+                b32 dpad_left = (pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT);
+                b32 dpad_right = (pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT);
                 
-                global_game_state.gamepad_input[gamepad_id].start = (pad->wButtons & XINPUT_GAMEPAD_START);
-                global_game_state.gamepad_input[gamepad_id].back = (pad->wButtons & XINPUT_GAMEPAD_BACK);
+                b32 start = (pad->wButtons & XINPUT_GAMEPAD_START);
+                b32 back = (pad->wButtons & XINPUT_GAMEPAD_BACK);
                 
-                global_game_state.gamepad_input[gamepad_id].left_thumb = (pad->wButtons & XINPUT_GAMEPAD_LEFT_THUMB);
-                global_game_state.gamepad_input[gamepad_id].right_thumb = (pad->wButtons & XINPUT_GAMEPAD_RIGHT_THUMB);
+                b32 left_thumb = (pad->wButtons & XINPUT_GAMEPAD_LEFT_THUMB);
+                b32 right_thumb = (pad->wButtons & XINPUT_GAMEPAD_RIGHT_THUMB);
                 
-                global_game_state.gamepad_input[gamepad_id].left_shoulder = (pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER);
-                global_game_state.gamepad_input[gamepad_id].right_shoulder = (pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER);
+                b32 left_shoulder = (pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER);
+                b32 right_shoulder = (pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER);
 
-                global_game_state.gamepad_input[gamepad_id].A_button = (pad->wButtons & XINPUT_GAMEPAD_A);
-                global_game_state.gamepad_input[gamepad_id].B_button = (pad->wButtons & XINPUT_GAMEPAD_B);
-                global_game_state.gamepad_input[gamepad_id].X_button = (pad->wButtons & XINPUT_GAMEPAD_X);
-                global_game_state.gamepad_input[gamepad_id].Y_button = (pad->wButtons & XINPUT_GAMEPAD_Y);
+                b32 A_button = (pad->wButtons & XINPUT_GAMEPAD_A);
+                b32 B_button = (pad->wButtons & XINPUT_GAMEPAD_B);
+                b32 X_button = (pad->wButtons & XINPUT_GAMEPAD_X);
+                b32 Y_button = (pad->wButtons & XINPUT_GAMEPAD_Y);
 
-                global_game_state.gamepad_input[gamepad_id].left_trigger = pad->bLeftTrigger;
-                global_game_state.gamepad_input[gamepad_id].right_trigger = pad->bRightTrigger;
+                b32 left_trigger = pad->bLeftTrigger;
+                b32 right_trigger = pad->bRightTrigger;
 
-                global_game_state.gamepad_input[gamepad_id].left_thumbstick_x = pad->sThumbLX;
-                global_game_state.gamepad_input[gamepad_id].left_thumbstick_y = pad->sThumbLY;
-                global_game_state.gamepad_input[gamepad_id].right_thumbstick_x = pad->sThumbRX;
-                global_game_state.gamepad_input[gamepad_id].right_thumbstick_y = pad->sThumbRY;
+                s16 left_thumbstick_x = pad->sThumbLX;
+                s16 left_thumbstick_y = pad->sThumbLY;
+                s16 right_thumbstick_x = pad->sThumbRX;
+                s16 right_thumbstick_y = pad->sThumbRY;
             }
             else{
                 // NOTE: Controller is not connected.
@@ -401,6 +530,7 @@ INT WINAPI WinMain(HINSTANCE instance,
         // OpenGL
         glClearColor(180.0/255.0, 180.0/255.0, 67.0/255.0, 0);
         glClear(GL_COLOR_BUFFER_BIT);
+
         HDC device_context = GetDC(window_handle);
         SwapBuffers(device_context);
         ReleaseDC(window_handle, device_context);
