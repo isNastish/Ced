@@ -55,6 +55,7 @@ typedef real64 f64;
 
 #include "ced.c"
 
+#include <math.h>
 #include <stdio.h>
 #include <windows.h>
 #include <xinput.h>
@@ -130,8 +131,9 @@ internal void w32_fill_sound_buffer(SoundOutput *sound_output, s32 byte_to_lock,
         for(u32 sample_index = 0;
             sample_index < samples_count_region1;
             ++sample_index){
-            s16 sample_value = ((sound_output->running_sample_index / (sound_output->wave_period / 2)) % 2) ?
-                sound_output->tone_volume : -sound_output->tone_volume;
+            f32 t = 2.0f * Pi32 * ((f32)sound_output->running_sample_index / (f32)sound_output->wave_period);
+            f32 sin_value = sinf(t);
+            s16 sample_value = (s16)(sin_value * sound_output->tone_volume);
             *sample_out++ = sample_value; // LEFT channel.
             *sample_out++ = sample_value; // RIGHT channel.
             ++sound_output->running_sample_index;
@@ -142,8 +144,9 @@ internal void w32_fill_sound_buffer(SoundOutput *sound_output, s32 byte_to_lock,
             for(u32 sample_index = 0;
                 sample_index < samples_count_region2;
                 ++sample_index){
-                s16 sample_value = ((sound_output->running_sample_index / (sound_output->wave_period / 2)) % 2) ?
-                    sound_output->tone_volume : -sound_output->tone_volume;
+                f32 t = 2.0f * Pi32 * ((f32)sound_output->running_sample_index / (f32)sound_output->wave_period);
+                f32 sin_value = sinf(t);
+                s16 sample_value = (s16)(sin_value * sound_output->tone_volume);
                 *sample_out++ = sample_value; // LEFT channel.
                 *sample_out++ = sample_value; // RIGHT channel.
                 ++sound_output->running_sample_index;
