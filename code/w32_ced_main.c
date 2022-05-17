@@ -79,6 +79,16 @@ struct W32_Bitmap{
     u32 pitch;
 };
 
+typedef struct SoundOutput SoundOutput;
+struct SoundOutput{
+    s32 samples_per_second;
+    s32 bytes_per_sample;
+    s32 buffer_size;
+    s32 tone_volume;
+    s32 tone_Hz;
+    s32 wave_period;
+    u32 running_sample_index;
+};
 
 global s32 global_running;
 global W32_Bitmap global_offscreen_bitmap;
@@ -94,10 +104,65 @@ internal void w32_init_stbtt(HWND window_handle); // STUDY: Do I need to do it i
 internal void w32_toggle_fullscreen(HWND window_handle);
 internal V2 w32_get_mouse_pos(HWND window_handle);
 internal void w32_init_dsound(HWND window_handle, s32 samples_per_second, s32 bytes_per_sample);
+internal void w32_fill_sound_buffer(SoundOutput *sound_output, s32 byte_to_lock, s32 bytes_to_write);
+
+
+
+internal void w32_fill_sound_buffer(SoundOutput *sound_output, s32 byte_to_lock, s32 bytes_to_write){
+    local_persist s32 dsound_is_playing = 0;
+    
+    void *locked_region1 = 0;
+    void *locked_region2 = 0;
+    u32 locked_region1_size = 0;
+    u32 locked_region2_size = 0;
+
+    if(IDirectSoundBuffer_Lock(global_secondary_sound_buffer, byte_to_lock, bytes_to_write,
+                               &locked_region1, &locked_region1_size,
+                               &locked_region2, &locked_region2_size, 0) == 0){
+
+        // Structure of the sound buffer.
+        // s16 s16  s16 s16  s16 s16  s16 s16  s16 s16  s16 s16  s16 s16  s16 s16 ...
+        // [L   R]  [L   R]  [L   R]  [L   R]  [L   R]  [L   R]  [L   R]  [L   R] ... 
+        // Each sample is 32bits (16 bit for Left channel and 16 bits for right channel).
+        s16 *sample_out = (s16 *)locked_region1;
+        u32 samples_count_region1 = (locked_region1_size / sound_output->bytes_per_sample);
+        u32 samples_count_region2 = (locked_region2_size / sound_output->bytes_per_sample);
+        for(u32 sample_index = 0;
+            sample_index < samples_count_region1;
+            ++sample_index){
+            s16 sample_value = ((sound_output->running_sample_index / (sound_output->wave_period / 2)) % 2) ?
+                sound_output->tone_volume : -sound_output->tone_volume;
+            *sample_out++ = sample_value; // LEFT channel.
+            *sample_out++ = sample_value; // RIGHT channel.
+            ++sound_output->running_sample_index;
+        }
+
+        if(locked_region2){
+            sample_out = (s16 *)locked_region2;
+            for(u32 sample_index = 0;
+                sample_index < samples_count_region2;
+                ++sample_index){
+                s16 sample_value = ((sound_output->running_sample_index / (sound_output->wave_period / 2)) % 2) ?
+                    sound_output->tone_volume : -sound_output->tone_volume;
+                *sample_out++ = sample_value; // LEFT channel.
+                *sample_out++ = sample_value; // RIGHT channel.
+                ++sound_output->running_sample_index;
+            }
+        }
+        IDirectSoundBuffer_Unlock(global_secondary_sound_buffer, locked_region1, locked_region1_size,
+                                  locked_region2, locked_region2_size);
+        if(!dsound_is_playing){
+            IDirectSoundBuffer_Play(global_secondary_sound_buffer, 0, 0, DSBPLAY_LOOPING);
+            dsound_is_playing = 1;
+        }
+    }
+    else{
+        // TODO: Error handling ("IDirectSoundBuffer_Lock" call failed).
+    }
+}
 
 #define DIRECT_SOUND_CREATE(name) HRESULT WINAPI name(LPCGUID pc_guid_device, LPDIRECTSOUND *pp_ds, LPUNKNOWN p_unk_outer)
 typedef DIRECT_SOUND_CREATE(direct_sound_create);
-
 internal void w32_init_dsound(HWND window_handle, s32 samples_per_second, s32 bytes_per_sample){
     // NOTE: LoadLibraryA();
     HMODULE dsound_lib = LoadLibraryA("dsound.dll");
@@ -409,17 +474,20 @@ INT WINAPI WinMain(HINSTANCE instance,
                                            CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, instance, 0)) != 0){
 
             // NOTE: DirectSound:
-            s32 dsound_samples_per_second = 48000;
-            s32 dsound_bytes_per_sample = sizeof(s16) * 2;
-            s32 dsound_buffer_size = (dsound_samples_per_second * dsound_bytes_per_sample);
-            s32 dsound_tone_volume = 400;
-            s32 dsound_tone_Hz = 256; // middle c.
-            u32 dsound_running_sample_index = 0;
-            s32 dsound_wave_period = (dsound_samples_per_second / dsound_tone_Hz);
-            s32 dsound_is_playing = 0;
+            SoundOutput sound_output = {0};
+            {
+                sound_output.samples_per_second = 48000;
+                sound_output.bytes_per_sample = sizeof(s16) * 2;
+                sound_output.buffer_size = (sound_output.samples_per_second * sound_output.bytes_per_sample);
+                sound_output.tone_volume = 400;
+                sound_output.tone_Hz = 256; // middle c.
+                sound_output.running_sample_index = 0;
+                sound_output.wave_period = (sound_output.samples_per_second / sound_output.tone_Hz);
+            }
+            w32_init_dsound(window_handle, sound_output.samples_per_second, sound_output.bytes_per_sample);
+            w32_fill_sound_buffer(&sound_output, 0, sound_output.buffer_size);
             
             w32_init_opengl(window_handle);
-            w32_init_dsound(window_handle, dsound_samples_per_second, dsound_bytes_per_sample);
             
             IDirectSoundBuffer_Play(global_secondary_sound_buffer, 0, 0, DSBPLAY_LOOPING);
             
@@ -493,7 +561,7 @@ INT WINAPI WinMain(HINSTANCE instance,
                 {
                     // NOTE: OpenGL.
                     V2 mouse = w32_get_mouse_pos(window_handle);
-                    glClearColor(28./255., 28./255., 28./255., 0);
+                    glClearColor(35./255., 35./255., 35./255., 0);
                     glClear(GL_COLOR_BUFFER_BIT);
                     debug_display_mouse_position(device_context, mouse.x1, mouse.x2);
                     SwapBuffers(device_context);
@@ -505,68 +573,19 @@ INT WINAPI WinMain(HINSTANCE instance,
                     u32 play_cursor = 0;
                     u32 write_cursor = 0;
                     if(IDirectSoundBuffer_GetCurrentPosition(global_secondary_sound_buffer, &play_cursor, &write_cursor) == 0){
-                        u32 byte_to_lock = (dsound_running_sample_index * dsound_bytes_per_sample) % dsound_buffer_size;
+                        u32 byte_to_lock =
+                            (sound_output.running_sample_index * sound_output.bytes_per_sample) % sound_output.buffer_size;
                         u32 bytes_to_write = 0;
 
-                        if(byte_to_lock == play_cursor){
-                            bytes_to_write = dsound_buffer_size;
-                        }
-                        else if(byte_to_lock > play_cursor){
-                            bytes_to_write = (dsound_buffer_size - byte_to_lock);
+                        if(byte_to_lock > play_cursor){
+                            bytes_to_write = (sound_output.buffer_size - byte_to_lock);
                             bytes_to_write += play_cursor;
                         }
                         else{
                             bytes_to_write = (play_cursor - byte_to_lock);
                         }
-                        
-                        void *locked_region1;
-                        void *locked_region2;
-                        u32 locked_region1_size;
-                        u32 locked_region2_size;
 
-                        if(IDirectSoundBuffer_Lock(global_secondary_sound_buffer, byte_to_lock, bytes_to_write,
-                                                   &locked_region1, &locked_region1_size,
-                                                   &locked_region2, &locked_region2_size, 0) == 0){
-
-                            // Structure of the sound buffer.
-                            // s16 s16  s16 s16  s16 s16  s16 s16  s16 s16  s16 s16  s16 s16  s16 s16 ...
-                            // [L   R]  [L   R]  [L   R]  [L   R]  [L   R]  [L   R]  [L   R]  [L   R] ... 
-                            // Each sample is 32bits (16 bit for Left channel and 16 bits for right channel).
-                            s16 *sample_out = (s16 *)locked_region1;
-                            u32 samples_count_region1 = (locked_region1_size / dsound_bytes_per_sample);
-                            u32 samples_count_region2 = (locked_region2_size / dsound_bytes_per_sample);
-                            for(u32 sample_index = 0;
-                                sample_index < samples_count_region1;
-                                ++sample_index){
-                                s16 sample_value = ((dsound_running_sample_index / (dsound_wave_period / 2)) % 2) ?
-                                    dsound_tone_volume : -dsound_tone_volume;
-                                *sample_out++ = sample_value; // LEFT channel.
-                                *sample_out++ = sample_value; // RIGHT channel.
-                                ++dsound_running_sample_index;
-                            }
-
-                            if(locked_region2){
-                                sample_out = (s16 *)locked_region2;
-                                for(u32 sample_index = 0;
-                                    sample_index < samples_count_region2;
-                                    ++sample_index){
-                                    s16 sample_value = ((dsound_running_sample_index / (dsound_wave_period / 2)) % 2) ?
-                                        dsound_tone_volume : -dsound_tone_volume;
-                                    *sample_out++ = sample_value; // LEFT channel.
-                                    *sample_out++ = sample_value; // RIGHT channel.
-                                    ++dsound_running_sample_index;
-                                }
-                            }
-                            IDirectSoundBuffer_Unlock(global_secondary_sound_buffer, locked_region1, locked_region1_size,
-                                                      locked_region2, locked_region2_size);
-                            if(!dsound_is_playing){
-                                IDirectSoundBuffer_Play(global_secondary_sound_buffer, 0, 0, DSBPLAY_LOOPING);
-                                dsound_is_playing = 1;
-                            }
-                        }
-                        else{
-                            // TODO: Error handling ("IDirectSoundBuffer_Lock" call failed).
-                        }
+                        w32_fill_sound_buffer(&sound_output, byte_to_lock, bytes_to_write);
                     }
                     else{
                         // TODO: Error handling ("IDirectSoundBuffer_GetCurrentPositino" call failed).
