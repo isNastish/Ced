@@ -36,8 +36,6 @@ set common_linker_flags=user32.lib kernel32.lib gdi32.lib opengl32.lib
 if not exist ..\..\build (mkdir ..\..\build)
 pushd ..\..\build
 
-cl /nologo /TC /Zi /FC /Fe: ced_gen_page.exe ..\Ced\code\gen_html_page.c %*
-
 cl ^
 %common_compiler_flags% ^
  ..\ced\code\w32_ced_main.c /link %common_linker_flags% %*

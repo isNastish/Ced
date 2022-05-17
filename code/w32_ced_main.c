@@ -1,19 +1,38 @@
 
-#include <stdio.h>
-#include <stdint.h>
-#include <windows.h>
-#include <xinput.h>
-#include <gl/gl.h>
 
-// NOTE: external.
-#define STB_TRUETYPE_IMPLEMENTATION
-#include "ext/stb_truetype.h"
+
+/*
+  TODO:
+
+  [x] Fullscreen mode.
+  [] Initialize DirectSound and output Square/Sine wave to the sound buffer.
+  [] Gamepad input (deal with DEADZONEs), and test the input.
+  [] Raw input (support for multiple keyboars).
+  [x] Mouse position.
+  [] Mouse input.
+  [] WM_ACTIVATEAPP (handle case when application is not active).
+  [] Timing (QueryPerformanceCounter, RDTSC).
+  [] Proper OpenGL initialization.
+  [] Stuby about true type font.
+  [] Figure out what's going on in stb_truetype.h
+  [] Implement corrent text renderer (with kerning table).
+  ...
+  
+  
+ */
+
+#include <stdint.h>
 
 #define global static
 #define internal static
 #define local_persist static
 
 #define const
+#define Pi32 3.14159265358f
+#define Out(s) OutputDebugStringA(s);
+#define Out_s(buf, buf_size, format, ...)           \
+    sprintf_s(buf, buf_size, format, __VA_ARGS__);  \
+    Out(buf);
 
 typedef int8_t s8;
 typedef int16_t s16;
@@ -34,58 +53,21 @@ typedef double real64;
 typedef real32 f32;
 typedef real64 f64;
 
-// NOTE: Structs:
-typedef enum KeyCode KeyCode;
-enum KeyCode{
-    Key_Alt_F4, 
-    Key_F4, 
-    Key_Space,
-    Key_ArrowUp,
-    Key_ArrowDown,
-    Key_ArrowLeft,
-    Key_ArrowRight,
-    Key_CapsLock, 
-    Key_Escape, 
-    Key_Shift,
-    Key_Asign,
-    Key_Minus,
-    Key_Period,
-    Key_Comman,
-    Key_ForwardSlash,
-    Key_Tilda,
-    Key_LeftBracket,
-    Key_RightBracket,
-};
+#include "ced.c"
 
-typedef enum KeyModifiers KeyModifiers;
-enum KeyModifiers{
-    KeyMod_Ctrl, 
-    KeyMod_Shift,
-    KeyMod_Alt,
-};
+#include <stdio.h>
+#include <windows.h>
+#include <xinput.h>
+#include <dsound.h>
+#include <gl/gl.h>
 
-typedef struct OsLayer OsLayer;
-struct OsLayes{
-    u32 i;
-    // TODO: Implement.
-};
-
-typedef struct W32_Timer W32_Timer;
-struct W32_Perf{
-    LARGE_INTEGER ticks_per_second;
-    // TODO: Finish.
-};
+#define STB_TRUETYPE_IMPLEMENTATION
+#include "ext/stb_truetype.h"
 
 typedef struct W32_WindowDimension W32_WindowDimension;
 struct W32_WindowDimension{
     s32 width;
     s32 height;
-};
-
-typedef struct W32_FileReadResult W32_FileReadResult;
-struct W32_FileReadResult{
-    void *contents;
-    u32 contents_size;
 };
 
 typedef struct W32_Bitmap W32_Bitmap;
@@ -97,123 +79,138 @@ struct W32_Bitmap{
     u32 pitch;
 };
 
-typedef struct GamepadInput GamepadInput;
-struct GamepadInput{
-    u8 is_connected;
-    struct
-    {
-        b32 dpad_up;
-        b32 dpad_down;
-        b32 dpad_left;
-        b32 dpad_right;
-        
-        b32 start;
-        b32 back;
-        
-        b32 left_thumb;
-        b32 right_thumb;
-        
-        b32 left_shoulder;
-        b32 right_shoulder;
-        
-        b32 A_button;
-        b32 B_button;
-        b32 X_button;
-        b32 Y_button;
-        
-        b32 left_trigger;
-        b32 right_trigger;
-        
-        s16 left_thumbstick_x;
-        s16 left_thumbstick_y;
-        s16 right_thumbstick_x;
-        s16 right_thumbstick_y;
-    };
-};
 
-global u8 global_running;
+global s32 global_running;
 global W32_Bitmap global_offscreen_bitmap;
+global LPDIRECTSOUNDBUFFER global_secondary_sound_buffer;
 
-// NOTE: Function definitions:
+internal void debug_display_mouse_position(HDC device_context, s32 mouse_pos_x, s32 mouse_pos_y);
 internal W32_WindowDimension w32_get_window_dimension(HWND window_handle);
 internal void w32_resize_dib_section(W32_Bitmap *bitmap, s32 window_width, s32 window_height);
-internal void w32_display_offscreen_buffer_in_window(W32_Bitmap *offscreen_bitmap,
-                                                     HDC device_context,
-                                                     s32 window_width,
-                                                     s32 window_height);
+internal void w32_display_offscreen_buffer(W32_Bitmap *offscreen_bitmap, HDC device_context, s32 window_width, s32 window_height);
 internal void w32_load_xinput(void);
 internal void w32_init_opengl(HWND window_handle);
-internal void w32_init_stbtt(void); // TODO: Implement.
-internal W32_FileReadResult w32_read_entire_file_into_memory(const char *file_name); // TODO: Implement.
-internal b32 w32_does_file_exist(const char *file_name);
-internal void w32_timer_begin_frame(W32_Timer *timer); // TODO: Implement.
-internal void w32_timer_end_frame(W32_Timer *timer, f64 frames_per_second); // TODO: Implement.
+internal void w32_init_stbtt(HWND window_handle); // STUDY: Do I need to do it in platform leyer?
+internal void w32_toggle_fullscreen(HWND window_handle);
+internal V2 w32_get_mouse_pos(HWND window_handle);
+internal void w32_init_dsound(HWND window_handle, s32 samples_per_second, s32 bytes_per_sample);
 
+#define DIRECT_SOUND_CREATE(name) HRESULT WINAPI name(LPCGUID pc_guid_device, LPDIRECTSOUND *pp_ds, LPUNKNOWN p_unk_outer)
+typedef DIRECT_SOUND_CREATE(direct_sound_create);
 
-// NOTE: test stb_truetype.h
-global u8 ttf_buffer[1 << 20];
-global u8 temp_bitmap[512*512];
-
-global stbtt_bakedchar cdata[96];
-GLuint ftex;
-
-internal void my_stbtt_init_font(void){
-    fread(ttf_buffer, 1, 1<<20, fopen("c:/windows/fonts/times.ttf", "rb"));
-
-    stbtt_BakeFontBitmap(ttf_buffer, 0, 32.0, temp_bitmap, 512, 512, 32, 96, cdata);
-
-    glGenTextures(1, &ftex);
-    glBindTexture(GL_TEXTURE_2D, ftex);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_ALPHA, 512, 512, 0, GL_ALPHA, GL_UNSIGNED_BYTE, temp_bitmap);
-    
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-}
-
-internal void my_stbtt_print_text(f32 x, f32 y, const char *text){
-    // assume ortographic projection with units = screen pixels, origin at top left.
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glEnable(GL_TEXTURE_2D);
-    glBindTexture(GL_TEXTURE_2D, ftex);
-    glBegin(GL_QUADS);
-    while(*text){
-        if(*text >= 32 && *text < 128){
-            stbtt_aligned_quad q;
-            stbtt_GetBakedQuad(cdata, 512, 512, *text-32, &x, &y, &q, 1);
-            glTexCoord2f(q.s0, q.t0); glVertex2f(q.x0, q.y0);
-            glTexCoord2f(q.s1, q.t0); glVertex2f(q.x1, q.y0);
-            glTexCoord2f(q.s1, q.t1); glVertex2f(q.x1, q.y1);
-            glTexCoord2f(q.s0, q.t1); glVertex2f(q.x0, q.y1);
+internal void w32_init_dsound(HWND window_handle, s32 samples_per_second, s32 bytes_per_sample){
+    // NOTE: LoadLibraryA();
+    HMODULE dsound_lib = LoadLibraryA("dsound.dll");
+    if(dsound_lib){
+        direct_sound_create *DirectSoundCreate =
+            (direct_sound_create *)GetProcAddress(dsound_lib, "DirectSoundCreate");
+        LPDIRECTSOUND direct_sound = {0};
+        if(DirectSoundCreate && (DirectSoundCreate(0, &direct_sound, 0) == 0)){
+            WAVEFORMATEX wave_format = {0};
+            {
+                wave_format.wFormatTag = WAVE_FORMAT_PCM;
+                wave_format.nChannels = 2;
+                wave_format.nSamplesPerSec = samples_per_second;
+                wave_format.wBitsPerSample = 16;
+                wave_format.nBlockAlign = (wave_format.nChannels * wave_format.wBitsPerSample) / 8;
+                wave_format.nAvgBytesPerSec = (wave_format.nSamplesPerSec * wave_format.nBlockAlign);
+                wave_format.cbSize = 0;
+            }
+            if(IDirectSound_SetCooperativeLevel(direct_sound, window_handle, DSSCL_PRIORITY) == 0){
+                DSBUFFERDESC buffer_desc = {0};
+                {
+                    buffer_desc.dwSize = sizeof(DSBUFFERDESC);
+                    buffer_desc.dwFlags = DSBCAPS_PRIMARYBUFFER;
+                    buffer_desc.dwBufferBytes = 0;
+                    buffer_desc.dwReserved = 0;
+                    buffer_desc.lpwfxFormat = 0;
+                    buffer_desc.guid3DAlgorithm = GUID_NULL;
+                }
+                LPDIRECTSOUNDBUFFER direct_sound_buffer = {0};
+                if(IDirectSound_CreateSoundBuffer(direct_sound, &buffer_desc, &direct_sound_buffer, 0) == 0){
+                    if(IDirectSoundBuffer_SetFormat(direct_sound_buffer, &wave_format) == 0){
+                        Out("success!\n");
+                    }
+                    else{
+                        // TODO: Error handling("IDirectSoundBuffer_SetFormat" call failed).
+                    }
+                }
+                else{
+                    // TODO: Error handling("IDirectSound_CreateSoundBuffer" call failed).
+                }
+            }
+            else{
+                // TODO: Error handling("IDirectSound_SetCooperativeLevel" call failed).
+            }
+            DSBUFFERDESC buffer_desc = {0};
+            {
+                buffer_desc.dwSize = sizeof(DSBUFFERDESC);
+                buffer_desc.dwFlags = 0;
+                buffer_desc.dwBufferBytes = (samples_per_second * bytes_per_sample);
+                buffer_desc.dwReserved = 0;
+                buffer_desc.lpwfxFormat = &wave_format;
+                buffer_desc.guid3DAlgorithm = GUID_NULL;
+            }
+            if(IDirectSound_CreateSoundBuffer(direct_sound, &buffer_desc, &global_secondary_sound_buffer, 0) == 0){
+                Out("success!\n");
+            }
+            else{
+                // TODO: Error handling("IDirectSound_CreateSoundBuffer" call failed).
+            }
         }
-        ++text;
+        else{
+            // TODO: Error handling ("DirectSoundCreate" call failed).
+        }
     }
-    glEnd();
-}
-
-internal void w32_timer_begin_frame(W32_Timer *timer){
-    
-}
-
-internal void w32_timer_end_frame(W32_Timer *timer, f64 frames_per_second){
-    
-}
-
-// NOTE: I have to specify a full path to the file.
-internal b32 w32_does_file_exist(const char *file_name){
-    b32 result = 1;
-    if(GetFileAttributesA(file_name) == INVALID_FILE_ATTRIBUTES){
-        result = 0;
+    else{
+        // TODO: Error handling (failed to load "dsound.dll").
     }
-    return(result);
 }
 
-internal W32_FileReadResult w32_read_entire_file_into_memory(const char *file_name){
-    W32_FileReadResult file_result = {0};
-    
-    return(file_result);
+internal void debug_display_mouse_position(HDC device_context, s32 mouse_pos_x, s32 mouse_pos_y){
+    char buf_out[256];
+    sprintf_s(buf_out, sizeof(buf_out), "mouse: (%d, %d)", mouse_pos_x, mouse_pos_y);
+    TextOutA(device_context, 0, 0, buf_out, strlen(buf_out)); // TODO: Write my own string_len(...) function.
 }
 
-internal void w32_init_stbtt(void){
+internal V2 w32_get_mouse_pos(HWND window_handle){
+    V2 mouse_pos = {0};
+    POINT cursor_pos = {0};
+    GetCursorPos(&cursor_pos);
+    ScreenToClient(window_handle, &cursor_pos);
+    mouse_pos.x1 = cursor_pos.x;
+    mouse_pos.x2 = cursor_pos.y;
+    return(mouse_pos);
+}
+
+internal void w32_toggle_fullscreen(HWND window_handle){
+    local_persist WINDOWPLACEMENT window_placement = {0};
+    window_placement.length = sizeof(WINDOWPLACEMENT);
+    u32 window_style = GetWindowLongA(window_handle, GWL_STYLE);
+
+    if(window_style & WS_OVERLAPPEDWINDOW){
+        // NOTE: Go to fullscreen mode.
+        MONITORINFO monitor_info = {0};
+        monitor_info.cbSize = sizeof(MONITORINFO);
+        
+        if(GetWindowPlacement(window_handle, &window_placement) &&
+           GetMonitorInfo(MonitorFromWindow(window_handle, MONITOR_DEFAULTTOPRIMARY), &monitor_info)){
+            SetWindowLongA(window_handle, GWL_STYLE, (window_style & ~WS_OVERLAPPEDWINDOW));
+            SetWindowPos(window_handle, HWND_TOP, monitor_info.rcMonitor.left, monitor_info.rcMonitor.top,
+                         monitor_info.rcMonitor.right - monitor_info.rcMonitor.left,
+                         monitor_info.rcMonitor.bottom - monitor_info.rcMonitor.top,
+                         SWP_FRAMECHANGED | SWP_NOOWNERZORDER);
+        }
+        else{
+            // TODO: Error handling ("GetWindowPlacement" or "GetMonitorInfo" calls failed).
+        }
+    }
+    else{
+        // NOTE: Go to normal mode.
+        SetWindowLongA(window_handle, GWL_STYLE, (window_style | WS_OVERLAPPEDWINDOW)); // NOTE: (WS_VISIBLE | WS_CLIPSIBLINGS).
+        SetWindowPlacement(window_handle, &window_placement);
+        SetWindowPos(window_handle, 0, 0, 0, 0, 0, (SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED | SWP_NOOWNERZORDER));
+    }
 }
 
 internal void w32_init_opengl(HWND window_handle){
@@ -237,12 +234,8 @@ internal void w32_init_opengl(HWND window_handle){
             HGLRC opengl_dummy_context = wglCreateContext(device_context);
         
             if(wglMakeCurrent(device_context, opengl_dummy_context)){
-                char opengl_version_buf[128];
-                sprintf_s(opengl_version_buf,
-                          sizeof(opengl_version_buf),
-                          "OpenGL version: %s.\n",
-                          (char *)glGetString(GL_VERSION));
-                OutputDebugStringA(opengl_version_buf);
+                char buf[128];
+                Out_s(buf, sizeof(buf), "OpenGL version: %s.\n", (char *)glGetString(GL_VERSION));
             }
             else{
                 // TODO: error handling.
@@ -355,17 +348,18 @@ internal void w32_display_offscreen_buffer_in_window(W32_Bitmap *offscreen_bitma
 
 LRESULT CALLBACK w32_main_window_proc(HWND window_handle, UINT message, WPARAM w_param, LPARAM l_param){
     LRESULT result = 0;
+    local_persist fullscreen_mode = 0;
     
     switch(message){
-        case(WM_CREATE):{ 
-            w32_init_opengl(window_handle);
+        case(WM_ACTIVATEAPP):{
+            Out("App was activated!\n");
         }break;
         case(WM_CLOSE):{
             global_running = 0;
-        };
+        }break;
         case(WM_DESTROY ):{
             PostQuitMessage(0);
-        };
+        }break;
         case(WM_SYSKEYDOWN):
         case(WM_SYSKEYUP):
         case(WM_KEYDOWN):
@@ -374,46 +368,15 @@ LRESULT CALLBACK w32_main_window_proc(HWND window_handle, UINT message, WPARAM w
             s32 was_down = ((l_param & (1 << 30)) != 0);
             s32 is_down = ((l_param & (1 << 31)) == 0);
 
-            u64 key_code = 0;
-            
-            if(((vk_code >= 'A') && (vk_code <= 'Z')) ||
-               ((vk_code >= '0') && (vk_code <= '9'))){
-                char buf[8];
-                sprintf_s(buf, sizeof(buf), "%c\n", tolower((char)vk_code));
-                OutputDebugStringA(buf);
-            }
-            else{
-                switch(vk_code){
-                    case(VK_F4):{
-                        if(l_param & (1 << 29)){
-                            key_code = Key_Alt_F4;
-                        }
-                        else{
-                            key_code = Key_F4;
-                        }
-                    }break;
-                    case(VK_SPACE):{ key_code = Key_Space; }break;
-                    case(VK_UP):{ key_code = Key_ArrowUp; }break;
-                    case(VK_DOWN):{ key_code = Key_ArrowDown; }break;
-                    case(VK_LEFT):{ key_code = Key_ArrowLeft; }break;
-                    case(VK_RIGHT):{ key_code = Key_ArrowRight; }break;
-                    case(VK_CAPITAL):{
-                        key_code = Key_CapsLock;
-                    }break;
-                    case(VK_ESCAPE):{ key_code = Key_Escape; }break;
-                    case(VK_SHIFT):{ key_code = Key_Shift; }break;
-                    case(VK_OEM_PLUS):{ key_code = Key_Asign; }break; // STUDY:
-                    case(VK_OEM_MINUS):{ key_code = Key_Minus; }break;
-                    case(VK_OEM_PERIOD): { key_code = Key_Period; }break;
-                    case(VK_OEM_COMMA): { key_code = Key_Comman; }break;
-                    case(VK_OEM_2):{ key_code = Key_ForwardSlash; }break;
-                    case(VK_OEM_3):{ key_code = Key_Tilda; }break; // STUDY: 
-                    case(VK_OEM_4):{ key_code = Key_LeftBracket; }break;
-                    case(VK_OEM_6):{ key_code = Key_RightBracket; }break;
-                }
-            }
-            DefWindowProc(window_handle, message, w_param, l_param);
-        };
+            //
+            // TODO: Process some keys! Later, we'll do more.
+            //
+
+            result = DefWindowProc(window_handle, message, w_param, l_param);
+        }break;
+        case(WM_LBUTTONUP):{
+            w32_toggle_fullscreen(window_handle);
+        }break;
         default:{
             result = DefWindowProc(window_handle, message, w_param, l_param);
         }break;
@@ -427,8 +390,7 @@ INT WINAPI WinMain(HINSTANCE instance,
                    PSTR cmd_line,
                    int show_code){
     w32_load_xinput();
-
-    w32_does_file_exist("w:/ced/code/w32_main.c");
+    
     
     WNDCLASSA window_class = {0};
     {
@@ -441,100 +403,186 @@ INT WINAPI WinMain(HINSTANCE instance,
         window_class.lpszClassName = "AppWindowClass";
     }
     
-    if(!RegisterClassA(&window_class)){
-        goto quit;
-    }
-    
-    HWND window_handle = CreateWindowEx(0,
-                                        window_class.lpszClassName, 
-                                        "Ced",
-                                        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-                                        CW_USEDEFAULT,
-                                        CW_USEDEFAULT,
-                                        CW_USEDEFAULT,
-                                        CW_USEDEFAULT,
-                                        0, 0,
-                                        instance,
-                                        0);
-    
-    if(!window_handle){
-        goto quit;
-    }
+    if(RegisterClassA(&window_class)){
+        HWND window_handle;
+        if((window_handle = CreateWindowEx(0, window_class.lpszClassName, "Ced", (WS_OVERLAPPEDWINDOW | WS_VISIBLE),
+                                           CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, instance, 0)) != 0){
 
-    my_stbtt_init_font();
+            // NOTE: DirectSound:
+            s32 dsound_samples_per_second = 48000;
+            s32 dsound_bytes_per_sample = sizeof(s16) * 2;
+            s32 dsound_buffer_size = (dsound_samples_per_second * dsound_bytes_per_sample);
+            s32 dsound_tone_volume = 400;
+            s32 dsound_tone_Hz = 256; // middle c.
+            u32 dsound_running_sample_index = 0;
+            s32 dsound_wave_period = (dsound_samples_per_second / dsound_tone_Hz);
+            s32 dsound_is_playing = 0;
+            
+            w32_init_opengl(window_handle);
+            w32_init_dsound(window_handle, dsound_samples_per_second, dsound_bytes_per_sample);
+            
+            IDirectSoundBuffer_Play(global_secondary_sound_buffer, 0, 0, DSBPLAY_LOOPING);
+            
+            HDC device_context = GetDC(window_handle);
 
-    
-    global_running = 1;
-    while(global_running){
+            global_running = 1;
+            while(global_running){
         
-        MSG message;
+                MSG message;
         
-        while(PeekMessage(&message, 0, 0, 0, PM_REMOVE)){
-            TranslateMessage(&message);
-            DispatchMessageA(&message);
+                while(PeekMessage(&message, 0, 0, 0, PM_REMOVE)){
+                    TranslateMessage(&message);
+                    DispatchMessageA(&message);
+                }
+        
+                {
+                    // NOTE: XInput:
+                    s32 gamepad_id;
+                    for(gamepad_id = 0;
+                        gamepad_id < XUSER_MAX_COUNT;
+                        ++gamepad_id){
+                        XINPUT_STATE controller_state = {0};
+
+                        if(XInputGetState(gamepad_id, &controller_state) == ERROR_SUCCESS){
+                            // NOTE: Controller is connected.
+                            XINPUT_GAMEPAD *pad = &controller_state.Gamepad;
+
+                            b32 dpad_up = (pad->wButtons & XINPUT_GAMEPAD_DPAD_UP);
+                            b32 dpad_down = (pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN);
+                            b32 dpad_left = (pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT);
+                            b32 dpad_right = (pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT);
+                
+                            b32 start = (pad->wButtons & XINPUT_GAMEPAD_START);
+                            b32 back = (pad->wButtons & XINPUT_GAMEPAD_BACK);
+                
+                            b32 left_thumb = (pad->wButtons & XINPUT_GAMEPAD_LEFT_THUMB);
+                            b32 right_thumb = (pad->wButtons & XINPUT_GAMEPAD_RIGHT_THUMB);
+                
+                            b32 left_shoulder = (pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER);
+                            b32 right_shoulder = (pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER);
+
+                            b32 A_button = (pad->wButtons & XINPUT_GAMEPAD_A);
+                            b32 B_button = (pad->wButtons & XINPUT_GAMEPAD_B);
+                            b32 X_button = (pad->wButtons & XINPUT_GAMEPAD_X);
+                            b32 Y_button = (pad->wButtons & XINPUT_GAMEPAD_Y);
+
+                            b32 left_trigger = pad->bLeftTrigger;
+                            b32 right_trigger = pad->bRightTrigger;
+
+                            s16 left_thumbstick_x = pad->sThumbLX;
+                            s16 left_thumbstick_y = pad->sThumbLY;
+                            s16 right_thumbstick_x = pad->sThumbRX;
+                            s16 right_thumbstick_y = pad->sThumbRY;
+                        }
+                        else{
+                            // NOTE: Controller is not connected.
+                        }
+
+                        // NOTE: Controller test.
+#if 0
+                        XINPUT_VIBRATION xinput_vibration = {0};
+                        {
+                            xinput_vibration.wLeftMotorSpeed = 65535;
+                            xinput_vibration.wRightMotorSpeed = 65535;
+                        }
+                        XInputSetState(gamepad_id, &xinput_vibration);
+#endif
+                    }
+                }
+                
+                {
+                    // NOTE: OpenGL.
+                    V2 mouse = w32_get_mouse_pos(window_handle);
+                    glClearColor(28./255., 28./255., 28./255., 0);
+                    glClear(GL_COLOR_BUFFER_BIT);
+                    debug_display_mouse_position(device_context, mouse.x1, mouse.x2);
+                    SwapBuffers(device_context);
+            
+                }
+
+                {
+                    // NOTE: DirectSound:
+                    u32 play_cursor = 0;
+                    u32 write_cursor = 0;
+                    if(IDirectSoundBuffer_GetCurrentPosition(global_secondary_sound_buffer, &play_cursor, &write_cursor) == 0){
+                        u32 byte_to_lock = (dsound_running_sample_index * dsound_bytes_per_sample) % dsound_buffer_size;
+                        u32 bytes_to_write = 0;
+
+                        if(byte_to_lock == play_cursor){
+                            bytes_to_write = dsound_buffer_size;
+                        }
+                        else if(byte_to_lock > play_cursor){
+                            bytes_to_write = (dsound_buffer_size - byte_to_lock);
+                            bytes_to_write += play_cursor;
+                        }
+                        else{
+                            bytes_to_write = (play_cursor - byte_to_lock);
+                        }
+                        
+                        void *locked_region1;
+                        void *locked_region2;
+                        u32 locked_region1_size;
+                        u32 locked_region2_size;
+
+                        if(IDirectSoundBuffer_Lock(global_secondary_sound_buffer, byte_to_lock, bytes_to_write,
+                                                   &locked_region1, &locked_region1_size,
+                                                   &locked_region2, &locked_region2_size, 0) == 0){
+
+                            // Structure of the sound buffer.
+                            // s16 s16  s16 s16  s16 s16  s16 s16  s16 s16  s16 s16  s16 s16  s16 s16 ...
+                            // [L   R]  [L   R]  [L   R]  [L   R]  [L   R]  [L   R]  [L   R]  [L   R] ... 
+                            // Each sample is 32bits (16 bit for Left channel and 16 bits for right channel).
+                            s16 *sample_out = (s16 *)locked_region1;
+                            u32 samples_count_region1 = (locked_region1_size / dsound_bytes_per_sample);
+                            u32 samples_count_region2 = (locked_region2_size / dsound_bytes_per_sample);
+                            for(u32 sample_index = 0;
+                                sample_index < samples_count_region1;
+                                ++sample_index){
+                                s16 sample_value = ((dsound_running_sample_index / (dsound_wave_period / 2)) % 2) ?
+                                    dsound_tone_volume : -dsound_tone_volume;
+                                *sample_out++ = sample_value; // LEFT channel.
+                                *sample_out++ = sample_value; // RIGHT channel.
+                                ++dsound_running_sample_index;
+                            }
+
+                            if(locked_region2){
+                                sample_out = (s16 *)locked_region2;
+                                for(u32 sample_index = 0;
+                                    sample_index < samples_count_region2;
+                                    ++sample_index){
+                                    s16 sample_value = ((dsound_running_sample_index / (dsound_wave_period / 2)) % 2) ?
+                                        dsound_tone_volume : -dsound_tone_volume;
+                                    *sample_out++ = sample_value; // LEFT channel.
+                                    *sample_out++ = sample_value; // RIGHT channel.
+                                    ++dsound_running_sample_index;
+                                }
+                            }
+                            IDirectSoundBuffer_Unlock(global_secondary_sound_buffer, locked_region1, locked_region1_size,
+                                                      locked_region2, locked_region2_size);
+                            if(!dsound_is_playing){
+                                IDirectSoundBuffer_Play(global_secondary_sound_buffer, 0, 0, DSBPLAY_LOOPING);
+                                dsound_is_playing = 1;
+                            }
+                        }
+                        else{
+                            // TODO: Error handling ("IDirectSoundBuffer_Lock" call failed).
+                        }
+                    }
+                    else{
+                        // TODO: Error handling ("IDirectSoundBuffer_GetCurrentPositino" call failed).
+                    }
+                }
+                
+            }
+            ReleaseDC(window_handle, device_context);
         }
-        
-        
-        // XInput:
-        s32 gamepad_id;
-        for(gamepad_id = 0;
-            gamepad_id < XUSER_MAX_COUNT;
-            ++gamepad_id){
-            XINPUT_STATE controller_state = {0};
-
-            if(XInputGetState(gamepad_id, &controller_state) == ERROR_SUCCESS){
-                // NOTE: Controller is connected.
-                XINPUT_GAMEPAD *pad = &controller_state.Gamepad;
-
-                b32 dpad_up = (pad->wButtons & XINPUT_GAMEPAD_DPAD_UP);
-                b32 dpad_down = (pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN);
-                b32 dpad_left = (pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT);
-                b32 dpad_right = (pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT);
-                
-                b32 start = (pad->wButtons & XINPUT_GAMEPAD_START);
-                b32 back = (pad->wButtons & XINPUT_GAMEPAD_BACK);
-                
-                b32 left_thumb = (pad->wButtons & XINPUT_GAMEPAD_LEFT_THUMB);
-                b32 right_thumb = (pad->wButtons & XINPUT_GAMEPAD_RIGHT_THUMB);
-                
-                b32 left_shoulder = (pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER);
-                b32 right_shoulder = (pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER);
-
-                b32 A_button = (pad->wButtons & XINPUT_GAMEPAD_A);
-                b32 B_button = (pad->wButtons & XINPUT_GAMEPAD_B);
-                b32 X_button = (pad->wButtons & XINPUT_GAMEPAD_X);
-                b32 Y_button = (pad->wButtons & XINPUT_GAMEPAD_Y);
-
-                b32 left_trigger = pad->bLeftTrigger;
-                b32 right_trigger = pad->bRightTrigger;
-
-                s16 left_thumbstick_x = pad->sThumbLX;
-                s16 left_thumbstick_y = pad->sThumbLY;
-                s16 right_thumbstick_x = pad->sThumbRX;
-                s16 right_thumbstick_y = pad->sThumbRY;
-            }
-            else{
-                // NOTE: Controller is not connected.
-            }
-
-            // NOTE: Controller test.
-            XINPUT_VIBRATION xinput_vibration = {0};
-            {
-                xinput_vibration.wLeftMotorSpeed = 65535;
-                xinput_vibration.wRightMotorSpeed = 65535;
-            }
-            XInputSetState(gamepad_id, &xinput_vibration);
+        else{
+            // TODO: Error handling ("CreateWindowEx" call failed).
         }
-
-        
-        // OpenGL
-        glClearColor(28./255., 28./255., 28./255., 0);
-        glClear(GL_COLOR_BUFFER_BIT);
-
-        HDC device_context = GetDC(window_handle);
-        SwapBuffers(device_context);
-        ReleaseDC(window_handle, device_context);
     }
-quit:;
+    else{
+        // TODO: Error handling ("RegisterClassA" call failed).
+    }
+    
     return(0);
 }
