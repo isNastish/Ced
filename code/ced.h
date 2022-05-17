@@ -21,4 +21,6 @@ union V2
     f32 x[2];
 };
 
+internal void game_update_and_render();
+
 #endif // CED_H

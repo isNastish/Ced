@@ -5,7 +5,7 @@
   TODO:
 
   [x] Fullscreen mode.
-  [] Initialize DirectSound and output Square/Sine wave to the sound buffer.
+  [x] Initialize DirectSound and output Square/Sine wave to the sound buffer.
   [] Gamepad input (deal with DEADZONEs), and test the input.
   [] Raw input (support for multiple keyboars).
   [x] Mouse position.
@@ -21,7 +21,18 @@
   
  */
 
+
+
 #include <stdint.h>
+#include <math.h>
+#include <stdio.h>
+#include <windows.h>
+#include <xinput.h>
+#include <dsound.h>
+#include <gl/gl.h>
+
+#define STB_TRUETYPE_IMPLEMENTATION
+#include "ext/stb_truetype.h"
 
 #define global static
 #define internal static
@@ -55,16 +66,6 @@ typedef real64 f64;
 
 #include "ced.c"
 
-#include <math.h>
-#include <stdio.h>
-#include <windows.h>
-#include <xinput.h>
-#include <dsound.h>
-#include <gl/gl.h>
-
-#define STB_TRUETYPE_IMPLEMENTATION
-#include "ext/stb_truetype.h"
-
 typedef struct W32_WindowDimension W32_WindowDimension;
 struct W32_WindowDimension{
     s32 width;
@@ -92,16 +93,12 @@ struct SoundOutput{
 };
 
 global s32 global_running;
-global W32_Bitmap global_offscreen_bitmap;
+global W32_Bitmap global_offscreen_buffer;
 global LPDIRECTSOUNDBUFFER global_secondary_sound_buffer;
 
-internal void debug_display_mouse_position(HDC device_context, s32 mouse_pos_x, s32 mouse_pos_y);
 internal W32_WindowDimension w32_get_window_dimension(HWND window_handle);
-internal void w32_resize_dib_section(W32_Bitmap *bitmap, s32 window_width, s32 window_height);
-internal void w32_display_offscreen_buffer(W32_Bitmap *offscreen_bitmap, HDC device_context, s32 window_width, s32 window_height);
 internal void w32_load_xinput(void);
 internal void w32_init_opengl(HWND window_handle);
-internal void w32_init_stbtt(HWND window_handle); // STUDY: Do I need to do it in platform leyer?
 internal void w32_toggle_fullscreen(HWND window_handle);
 internal V2 w32_get_mouse_pos(HWND window_handle);
 internal void w32_init_dsound(HWND window_handle, s32 samples_per_second, s32 bytes_per_sample);
@@ -235,12 +232,6 @@ internal void w32_init_dsound(HWND window_handle, s32 samples_per_second, s32 by
     }
 }
 
-internal void debug_display_mouse_position(HDC device_context, s32 mouse_pos_x, s32 mouse_pos_y){
-    char buf_out[256];
-    sprintf_s(buf_out, sizeof(buf_out), "mouse: (%d, %d)", mouse_pos_x, mouse_pos_y);
-    TextOutA(device_context, 0, 0, buf_out, strlen(buf_out)); // TODO: Write my own string_len(...) function.
-}
-
 internal V2 w32_get_mouse_pos(HWND window_handle){
     V2 mouse_pos = {0};
     POINT cursor_pos = {0};
@@ -372,48 +363,6 @@ internal W32_WindowDimension w32_get_window_dimension(HWND window_handle){
     return(window_dimension);
 }
 
-internal void w32_resize_dib_section(W32_Bitmap *bitmap, s32 window_width, s32 window_height){
-    if(bitmap->memory){
-        VirtualFree(bitmap->memory, 0, MEM_RELEASE);
-    }
-    
-    bitmap->width = window_width;
-    bitmap->height = window_height;
-    
-    bitmap->info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-    bitmap->info.bmiHeader.biWidth = bitmap->width;
-    bitmap->info.bmiHeader.biHeight = -bitmap->height; // NOTE: top-down dib (origin in the upper-left corner).
-    bitmap->info.bmiHeader.biPlanes = 1;
-    bitmap->info.bmiHeader.biBitCount = 32;
-    bitmap->info.bmiHeader.biCompression = BI_RGB;
-
-    u32 bpp = 4; // NOTE: bytes per pixel.
-    u32 bitmap_size = (bitmap->width * bitmap->height) * bpp;
-
-    bitmap->memory = VirtualAlloc(0, bitmap_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-    bitmap->pitch = (bitmap->width * bpp);
-}
-
-internal void w32_display_offscreen_buffer_in_window(W32_Bitmap *offscreen_bitmap,
-                                                     HDC device_context,
-                                                     s32 window_width,
-                                                     s32 window_height){
-    s32 scanlines_count = StretchDIBits(device_context,
-                                        0, 0,
-                                        window_width,
-                                        window_height,
-                                        0, 0,
-                                        offscreen_bitmap->width,
-                                        offscreen_bitmap->height,
-                                        offscreen_bitmap->memory,
-                                        &offscreen_bitmap->info,
-                                        DIB_RGB_COLORS,
-                                        SRCCOPY);
-    if(!scanlines_count){
-        // TODO: error handling.
-    }
-}
-
 LRESULT CALLBACK w32_main_window_proc(HWND window_handle, UINT message, WPARAM w_param, LPARAM l_param){
     LRESULT result = 0;
     local_persist fullscreen_mode = 0;
@@ -445,6 +394,9 @@ LRESULT CALLBACK w32_main_window_proc(HWND window_handle, UINT message, WPARAM w
         case(WM_LBUTTONUP):{
             w32_toggle_fullscreen(window_handle);
         }break;
+        case(WM_SIZE):{
+            // TODO: Handle somehow.
+        };
         default:{
             result = DefWindowProc(window_handle, message, w_param, l_param);
         }break;
@@ -475,7 +427,8 @@ INT WINAPI WinMain(HINSTANCE instance,
         HWND window_handle;
         if((window_handle = CreateWindowEx(0, window_class.lpszClassName, "Ced", (WS_OVERLAPPEDWINDOW | WS_VISIBLE),
                                            CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, 0, 0, instance, 0)) != 0){
-
+            w32_init_opengl(window_handle);
+            
             // NOTE: DirectSound:
             SoundOutput sound_output = {0};
             {
@@ -489,10 +442,6 @@ INT WINAPI WinMain(HINSTANCE instance,
             }
             w32_init_dsound(window_handle, sound_output.samples_per_second, sound_output.bytes_per_sample);
             w32_fill_sound_buffer(&sound_output, 0, sound_output.buffer_size);
-            
-            w32_init_opengl(window_handle);
-            
-            IDirectSoundBuffer_Play(global_secondary_sound_buffer, 0, 0, DSBPLAY_LOOPING);
             
             HDC device_context = GetDC(window_handle);
 
@@ -544,6 +493,8 @@ INT WINAPI WinMain(HINSTANCE instance,
                             s16 left_thumbstick_y = pad->sThumbLY;
                             s16 right_thumbstick_x = pad->sThumbRX;
                             s16 right_thumbstick_y = pad->sThumbRY;
+
+                            // (A|B|X|Y) buttons test:
                         }
                         else{
                             // NOTE: Controller is not connected.
@@ -559,16 +510,6 @@ INT WINAPI WinMain(HINSTANCE instance,
                         XInputSetState(gamepad_id, &xinput_vibration);
 #endif
                     }
-                }
-                
-                {
-                    // NOTE: OpenGL.
-                    V2 mouse = w32_get_mouse_pos(window_handle);
-                    glClearColor(35./255., 35./255., 35./255., 0);
-                    glClear(GL_COLOR_BUFFER_BIT);
-                    debug_display_mouse_position(device_context, mouse.x1, mouse.x2);
-                    SwapBuffers(device_context);
-            
                 }
 
                 {
@@ -594,7 +535,12 @@ INT WINAPI WinMain(HINSTANCE instance,
                         // TODO: Error handling ("IDirectSoundBuffer_GetCurrentPositino" call failed).
                     }
                 }
-                
+                                
+                {
+                    // NOTE: Game update and render:
+                    game_update_and_render();
+                    SwapBuffers(device_context);
+                }
             }
             ReleaseDC(window_handle, device_context);
         }
