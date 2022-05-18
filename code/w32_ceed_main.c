@@ -4,16 +4,16 @@
 /*
   TODO:
 
-  [] Support bitmap rendering to test controller input.
-  [] Support rendering of bitmaps as well as OpenGL rendering.
+  [x] Timing (QueryPerformanceCounter, RDTSC).
+  [x] Support bitmap rendering to test controller input.
+  [x] Support rendering of bitmaps as well as OpenGL rendering.
   [x] Fullscreen mode.
   [x] Initialize DirectSound and output Square/Sine wave to the sound buffer.
-  [] Gamepad input (deal with DEADZONEs), and test the input.
-  [] Raw input (support for multiple keyboars).
   [x] Mouse position.
   [] Mouse input.
+  [] Gamepad input (deal with DEADZONEs), and test the input.
+  [] Raw input (support for multiple keyboars).
   [] WM_ACTIVATEAPP (handle case when application is not active).
-  [] Timing (QueryPerformanceCounter, RDTSC).
   [] Proper OpenGL initialization.
   [] Stuby about true type font.
   [] Figure out what's going on in stb_truetype.h
@@ -27,8 +27,9 @@
 #include <xinput.h>
 #include <dsound.h>
 #include <gl/gl.h>
-
+ 
 #define OPENGL_RENDERER 1
+#define XINPUT_THUMB_STICK_DEADZONE 32767.0f
 #define Out(s) OutputDebugStringA(s);
 #define Out_s(buf, buf_size, format, ...)           \
     sprintf_s(buf, buf_size, format, __VA_ARGS__);  \
@@ -537,6 +538,77 @@ INT WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR cmd_line, i
                             s16 right_thumbstick_y = pad->sThumbRY;
 
                             // (A|B|X|Y) buttons test:
+                            {
+                                if(A_button){ y_offset -= 2; }
+                                else if(B_button) { x_offset -= 2; }
+                                else if(X_button) { x_offset += 2; }
+                                else if(Y_button) { y_offset += 2; }
+                            }
+
+                            // (L|R) trigger:
+                            {
+                                if(left_trigger){ x_offset += 2; }
+                                else if(right_trigger) { x_offset -= 2; }
+                                
+                                char buf[32];
+                                Out_s(buf, sizeof(buf), "L trigger: %i\nR trigger: %i\n\n", left_trigger, right_trigger);
+                            }
+                            
+                            // (L|R) thumbstick test:
+                            {
+                                //
+                                f32 lx = left_thumbstick_x;
+                                f32 ly = left_thumbstick_y;
+                                
+                                f32 magnitude = sqrt(Square(lx) + Square(ly));
+
+                                
+                                // in range [0.0, ..., 1.0f].
+                                f32 normalized_magnitude = 0.0f;
+                                if(magnitude > XINPUT_THUMB_STICK_DEADZONE){
+                                    magnitude = XINPUT_THUMB_STICK_DEADZONE;
+                                }
+                                f32 normalized_lx = 0.0;
+                                f32 normalized_ly = 0.0;
+                                
+                                if(lx > abs(XINPUT_THUMB_STICK_DEADZONE)){
+                                    lx = (lx > 0) ? 32767.0f : -32767.0f;
+                                }
+                                if(ly > abs(XINPUT_THUMB_STICK_DEADZONE)){
+                                    ly = (ly > 0) ? 32767.0f : -32767.0f;
+                                }
+                                
+                                if(magnitude != 0){
+                                    
+                                    normalized_lx = lx / magnitude;
+                                    normalized_ly = ly / magnitude;
+                                }
+                                normalized_magnitude = magnitude / XINPUT_THUMB_STICK_DEADZONE;
+
+
+                                // direction:
+                                if((normalized_lx > 0) && (normalized_ly > 0)){ // 1 quadrant (+, +).
+                                    x_offset -= 2;
+                                    y_offset += 2;
+                                }
+                                else if((normalized_lx < 0) && (normalized_ly > 0)){ // 2 quadrant (-, +).
+                                    x_offset += 2;
+                                    y_offset += 2;
+                                }
+                                else if((normalized_lx < 0) && (normalized_ly < 0)){ // 3 quadrant (-, -).
+                                    x_offset += 2;
+                                    y_offset -= 2;
+                                }
+                                else if((normalized_ly > 0) && (normalized_ly < 0)){ // 4 quadrant (+, -).
+                                    x_offset -= 2;
+                                    y_offset -= 2;
+                                }
+                                
+                                char buf[256];
+                                Out_s(buf, sizeof(buf),
+                                      "lx: %f\nly: %f\nnor_lx: %f\nnorm_ly: %f\nmagnitude: %f\nnorm_magnitude: %f\n\n",
+                                      lx, ly, normalized_lx, normalized_ly, magnitude, normalized_magnitude);
+                            }
                         }
                         else{
                             // NOTE: Controller is not connected.
@@ -609,9 +681,11 @@ INT WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR cmd_line, i
                         f32 timer_elapsed_ms = (f32)((1000.0f * (f32)timer_elapsed_counts) / (f32)timer_frequency);
                         f32 timer_frames_per_sec = ((f32)timer_frequency / (f32)timer_elapsed_counts);
 
+#if 0
                         char buf[256];
                         Out_s(buf, sizeof(buf), "Mhz: %u\nms: %f\nfps: %f\n\n",
                               timer_elapsed_Mhz, timer_elapsed_ms, timer_frames_per_sec);
+#endif
                     }
                     
                     timer_start_cycles = timer_end_cycles;

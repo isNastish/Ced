@@ -18,6 +18,9 @@ internal void game_init_stbtt_font(const char *ttf_file_path){
 }
 
 internal void game_draw_pattern(GameOffscreenBuffer *buffer, s32 x_offset, s32 y_offset){
+    V3 line_color = {139.0f, 119.0f, 101.0f};
+    V3 back_color = {205.0f, 190.0f, 112.0f};
+    
     u8 *dest_row = (u8 *)buffer->memory;
     for(s32 y = 0;
         y < buffer->height;
@@ -26,7 +29,13 @@ internal void game_draw_pattern(GameOffscreenBuffer *buffer, s32 x_offset, s32 y
         for(s32 x = 0;
             x < buffer->width;
             ++x){
-            *dest++ = (112 | (190 << 8) | (205 << 16));
+            if((((x + x_offset) % 40) == 0) ||
+               (((y + y_offset) % 40) == 0)){
+                *dest++ = ((s32)line_color.b | ((s32)line_color.g << 8) | ((s32)line_color.r << 16));
+            }
+            else{
+                *dest++ = (112 | (190 << 8) | (205 << 16));
+            }
         }
         dest_row += buffer->pitch;
     }
