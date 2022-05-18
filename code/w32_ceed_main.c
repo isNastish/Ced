@@ -35,6 +35,7 @@
     sprintf_s(buf, buf_size, format, __VA_ARGS__);  \
     Out(buf);
 
+
 // NOTE: my include files:
 #include "ceed_platform.c"
 
@@ -418,7 +419,19 @@ LRESULT CALLBACK w32_main_window_proc(HWND window_handle, UINT message, WPARAM w
             //
             // TODO: Process some keys! Later, we'll do more.
             //
-
+            if(vk_code == 'W'){
+                key_W = 1;
+            }
+            else if(vk_code == 'A'){
+                key_A = 1;
+            }
+            else if(vk_code == 'S'){
+                key_S = 1;
+            }
+            else if(vk_code == 'D'){
+                key_D = 1;
+            }
+            
             result = DefWindowProc(window_handle, message, w_param, l_param);
         }break;
         case(WM_LBUTTONUP):{

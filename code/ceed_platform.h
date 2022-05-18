@@ -41,6 +41,11 @@ typedef real64 f64;
 
 typedef s32 b32;
 
+global u8 key_W;
+global u8 key_A;
+global u8 key_S;
+global u8 key_D;
+
 typedef union V2 V2;
 union V2
 {
@@ -77,6 +82,13 @@ struct GameOffscreenBuffer{
     u32 width;
     u32 height;
     u32 pitch;
+};
+
+typedef struct GameSoundBuffer GameSoundBuffer;
+struct GameSoundBuffer{
+    s32 samples_per_second;
+    s32 sample_count;
+    s16 *samples;
 };
 
 internal void game_update_and_render(GameOffscreenBuffer *buffer, s32 x_offset, s32 y_offset);
