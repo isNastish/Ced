@@ -30,7 +30,7 @@ rem -wd<number> - disable the specific warning.
 rem -Zi - generates complete debugging information.
 rem -Fe:pathname - specifies a name and a directory for the .exe file or DLL created by the compiler.
 
-set common_compiler_flags=/nologo /TC /Zi /FC /Fe: ced.exe
+set common_compiler_flags=/nologo /TC /Zi /FC /Fe: ceed.exe
 set common_linker_flags=user32.lib kernel32.lib gdi32.lib opengl32.lib
 
 if not exist ..\..\build (mkdir ..\..\build)
@@ -38,7 +38,7 @@ pushd ..\..\build
 
 cl ^
 %common_compiler_flags% ^
- ..\ced\code\w32_ced_main.c /link %common_linker_flags% %*
+ ..\ced\code\w32_ceed_main.c /link %common_linker_flags% %*
 
 popd
 

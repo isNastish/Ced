@@ -32,7 +32,7 @@
 #include <gl/gl.h>
 
 #define STB_TRUETYPE_IMPLEMENTATION
-#include "ext/stb_truetype.h"
+#include "external/stb_truetype.h"
 
 #define global static
 #define internal static
@@ -64,7 +64,7 @@ typedef double real64;
 typedef real32 f32;
 typedef real64 f64;
 
-#include "ced.c"
+#include "ceed_platform.c"
 
 typedef struct W32_WindowDimension W32_WindowDimension;
 struct W32_WindowDimension{
@@ -103,8 +103,23 @@ internal void w32_toggle_fullscreen(HWND window_handle);
 internal V2 w32_get_mouse_pos(HWND window_handle);
 internal void w32_init_dsound(HWND window_handle, s32 samples_per_second, s32 bytes_per_sample);
 internal void w32_fill_sound_buffer(SoundOutput *sound_output, s32 byte_to_lock, s32 bytes_to_write);
+internal void w32_stbtt_init_font(const char *ttf_file_path);
 
 
+internal void w32_stbtt_init_font(const char *ttf_file_path){
+    // TODO: load entire file into memory.
+    void *file_contents = 0;
+    
+    // TODO: call stbtt_InitFont.
+    {
+        stbtt_fontinfo stb_font_info;
+        if(stbtt_InitFont(&stb_font_info, file_contents, stbtt_GetFontOffsetForIndex(file_contents, 0))){
+        }
+        else{
+            // TODO: Error handling ("stbtt_InitFont" call failed).
+        }
+    }
+}
 
 internal void w32_fill_sound_buffer(SoundOutput *sound_output, s32 byte_to_lock, s32 bytes_to_write){
     local_persist s32 dsound_is_playing = 0;

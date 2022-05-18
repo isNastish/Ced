@@ -1,7 +1,7 @@
 
 
-#if !defined(CED_H)
-#define CED_H
+#if !defined(CEED_PLATFORM_H)
+#define CEED_PLATFORM_H
 
 typedef union V2 V2;
 union V2
@@ -23,4 +23,4 @@ union V2
 
 internal void game_update_and_render();
 
-#endif // CED_H
+#endif // CEED_PLATFORM_H

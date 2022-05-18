@@ -1,6 +1,6 @@
 
 
-#include "ced.h"
+#include "ceed_platform.h"
 
 internal void game_update_and_render(void){
     // set background color.
@@ -8,3 +8,4 @@ internal void game_update_and_render(void){
     // clear the color buffer.
     glClear(GL_COLOR_BUFFER_BIT);
 }
+
