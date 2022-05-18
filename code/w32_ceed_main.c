@@ -4,6 +4,8 @@
 /*
   TODO:
 
+  [] Support bitmap rendering to test controller input.
+  [] Support rendering of bitmaps as well as OpenGL rendering.
   [x] Fullscreen mode.
   [x] Initialize DirectSound and output Square/Sine wave to the sound buffer.
   [] Gamepad input (deal with DEADZONEs), and test the input.
@@ -21,49 +23,18 @@
   
  */
 
-
-
-#include <stdint.h>
-#include <math.h>
-#include <stdio.h>
 #include <windows.h>
 #include <xinput.h>
 #include <dsound.h>
 #include <gl/gl.h>
 
-#define STB_TRUETYPE_IMPLEMENTATION
-#include "external/stb_truetype.h"
-
-#define global static
-#define internal static
-#define local_persist static
-
-#define const
-#define Pi32 3.14159265358f
+#define OPENGL_RENDERER 1
 #define Out(s) OutputDebugStringA(s);
 #define Out_s(buf, buf_size, format, ...)           \
     sprintf_s(buf, buf_size, format, __VA_ARGS__);  \
     Out(buf);
 
-typedef int8_t s8;
-typedef int16_t s16;
-typedef int32_t s32;
-typedef int64_t s64;
-
-typedef uint8_t u8;
-typedef uint16_t u16;
-typedef uint32_t u32;
-typedef uint64_t u64;
-
-typedef s32 bool32;
-typedef bool32 b32;
-
-typedef float real32;
-typedef double real64;
-
-typedef real32 f32;
-typedef real64 f64;
-
+// NOTE: my include files:
 #include "ceed_platform.c"
 
 typedef struct W32_WindowDimension W32_WindowDimension;
@@ -72,8 +43,8 @@ struct W32_WindowDimension{
     s32 height;
 };
 
-typedef struct W32_Bitmap W32_Bitmap;
-struct W32_Bitmap{
+typedef struct W32_OffscreenBuffer W32_OffscreenBuffer;
+struct W32_OffscreenBuffer{
     BITMAPINFO info;
     void *memory;
     s32 width;
@@ -81,47 +52,34 @@ struct W32_Bitmap{
     u32 pitch;
 };
 
-typedef struct SoundOutput SoundOutput;
-struct SoundOutput{
+typedef struct W32_SoundOutput W32_SoundOutput;
+struct W32_SoundOutput{
     s32 samples_per_second;
     s32 bytes_per_sample;
     s32 buffer_size;
     s32 tone_volume;
-    s32 tone_Hz;
+    s32 tone_hz;
     s32 wave_period;
     u32 running_sample_index;
 };
 
-global s32 global_running;
-global W32_Bitmap global_offscreen_buffer;
+global b32 global_running;
+global HDC global_device_context;
+global W32_OffscreenBuffer global_offscreen_buffer;
 global LPDIRECTSOUNDBUFFER global_secondary_sound_buffer;
 
 internal W32_WindowDimension w32_get_window_dimension(HWND window_handle);
-internal void w32_load_xinput(void);
-internal void w32_init_opengl(HWND window_handle);
+internal void w32_resize_dib_section(W32_OffscreenBuffer *offscree_buffer, s32 window_width, s32 window_height);
+internal void w32_display_offscreen_buffer(W32_OffscreenBuffer *offscreen_buffer, HDC device_context, s32 window_width, s32 window_height);
 internal void w32_toggle_fullscreen(HWND window_handle);
-internal V2 w32_get_mouse_pos(HWND window_handle);
+internal V2 w32_get_mouse_position(HWND window_handle);
+internal void w32_init_xinput(void);
+internal void w32_init_opengl(HWND window_handle);
 internal void w32_init_dsound(HWND window_handle, s32 samples_per_second, s32 bytes_per_sample);
-internal void w32_fill_sound_buffer(SoundOutput *sound_output, s32 byte_to_lock, s32 bytes_to_write);
-internal void w32_stbtt_init_font(const char *ttf_file_path);
+internal void w32_fill_sound_buffer(W32_SoundOutput *sound_output, s32 byte_to_lock, s32 bytes_to_write);
 
 
-internal void w32_stbtt_init_font(const char *ttf_file_path){
-    // TODO: load entire file into memory.
-    void *file_contents = 0;
-    
-    // TODO: call stbtt_InitFont.
-    {
-        stbtt_fontinfo stb_font_info;
-        if(stbtt_InitFont(&stb_font_info, file_contents, stbtt_GetFontOffsetForIndex(file_contents, 0))){
-        }
-        else{
-            // TODO: Error handling ("stbtt_InitFont" call failed).
-        }
-    }
-}
-
-internal void w32_fill_sound_buffer(SoundOutput *sound_output, s32 byte_to_lock, s32 bytes_to_write){
+internal void w32_fill_sound_buffer(W32_SoundOutput *sound_output, s32 byte_to_lock, s32 bytes_to_write){
     local_persist s32 dsound_is_playing = 0;
     
     void *locked_region1 = 0;
@@ -287,6 +245,7 @@ internal void w32_toggle_fullscreen(HWND window_handle){
     }
 }
 
+// TODO: Init OpenGL more properly.
 internal void w32_init_opengl(HWND window_handle){
     s32 pixel_format = 0;
     PIXELFORMATDESCRIPTOR pfd = {0};
@@ -301,13 +260,11 @@ internal void w32_init_opengl(HWND window_handle){
         pfd.iLayerType = PFD_MAIN_PLANE;
     }
 
-    HDC device_context = GetDC(window_handle);
-
-    if((pixel_format = ChoosePixelFormat(device_context, &pfd)) != 0){
-        if(SetPixelFormat(device_context, pixel_format, &pfd) == TRUE){
-            HGLRC opengl_dummy_context = wglCreateContext(device_context);
+    if((pixel_format = ChoosePixelFormat(global_device_context, &pfd)) != 0){
+        if(SetPixelFormat(global_device_context, pixel_format, &pfd) == TRUE){
+            HGLRC opengl_dummy_context = wglCreateContext(global_device_context);
         
-            if(wglMakeCurrent(device_context, opengl_dummy_context)){
+            if(wglMakeCurrent(global_device_context, opengl_dummy_context)){
                 char buf[128];
                 Out_s(buf, sizeof(buf), "OpenGL version: %s.\n", (char *)glGetString(GL_VERSION));
             }
@@ -322,7 +279,6 @@ internal void w32_init_opengl(HWND window_handle){
     else{
         // TODO: error handling.
     }
-    ReleaseDC(window_handle, device_context);
 }
 
 #define XINPUT_GET_STATE(name) DWORD WINAPI name(DWORD dw_user_index, XINPUT_STATE* p_state)
@@ -343,7 +299,7 @@ XINPUT_SET_STATE(XInputSetStateStub)
 global xinput_set_state *XInputSetStatePtr = XInputSetStateStub;
 #define XInputSetState XInputSetStatePtr
 
-internal void w32_load_xinput(void){
+internal void w32_init_xinput(void){
     HMODULE xinput_lib = LoadLibraryA("xinput1_4.dll");
     if(!xinput_lib){
         xinput_lib = LoadLibraryA("xinput9_1_0.dll");
@@ -378,13 +334,50 @@ internal W32_WindowDimension w32_get_window_dimension(HWND window_handle){
     return(window_dimension);
 }
 
+internal void w32_resize_dib_section(W32_OffscreenBuffer *offscreen_buffer, s32 window_width, s32 window_height){
+    if(offscreen_buffer->memory){
+        VirtualFree(offscreen_buffer->memory, 0, MEM_RELEASE);
+    }
+
+    offscreen_buffer->width = window_width;
+    offscreen_buffer->height = window_height;
+    
+    offscreen_buffer->info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    offscreen_buffer->info.bmiHeader.biWidth = offscreen_buffer->width;
+    offscreen_buffer->info.bmiHeader.biHeight = -offscreen_buffer->height; // top-down bitmap, origin in the upper-left corner.
+    offscreen_buffer->info.bmiHeader.biPlanes = 1;
+    offscreen_buffer->info.bmiHeader.biBitCount = 32;
+    offscreen_buffer->info.bmiHeader.biCompression = BI_RGB;
+    offscreen_buffer->info.bmiHeader.biSizeImage = 0;
+    offscreen_buffer->info.bmiHeader.biXPelsPerMeter = 0;
+    offscreen_buffer->info.bmiHeader.biYPelsPerMeter = 0;
+    offscreen_buffer->info.bmiHeader.biClrUsed = 0;
+    offscreen_buffer->info.bmiHeader.biClrImportant = 0;
+
+    {
+        u32 bpp = 4; // bytes per pixel.
+        u32 allocation_size = (offscreen_buffer->width * offscreen_buffer->height) * bpp;
+        offscreen_buffer->memory = VirtualAlloc(0, allocation_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+        offscreen_buffer->pitch = (offscreen_buffer->width * bpp);
+    }
+}
+
+internal void w32_display_offscreen_buffer(W32_OffscreenBuffer *offscreen_buffer, HDC device_context,
+                                           s32 window_width, s32 window_height){
+    s32 scanlines_count = StretchDIBits(device_context, 0, 0, window_width, window_height,
+                                        0, 0, offscreen_buffer->width, offscreen_buffer->height,
+                                        offscreen_buffer->memory, &offscreen_buffer->info,
+                                        DIB_RGB_COLORS, SRCCOPY);
+    assert(scanlines_count == offscreen_buffer->height);
+}
+
 LRESULT CALLBACK w32_main_window_proc(HWND window_handle, UINT message, WPARAM w_param, LPARAM l_param){
     LRESULT result = 0;
     local_persist fullscreen_mode = 0;
     
     switch(message){
         case(WM_ACTIVATEAPP):{
-            Out("App was activated!\n");
+            global_device_context = GetDC(window_handle);
         }break;
         case(WM_CLOSE):{
             global_running = 0;
@@ -410,7 +403,18 @@ LRESULT CALLBACK w32_main_window_proc(HWND window_handle, UINT message, WPARAM w
             w32_toggle_fullscreen(window_handle);
         }break;
         case(WM_SIZE):{
-            // TODO: Handle somehow.
+#if OPENGL_RENDERER
+            // NOTE: Render using OpenGL.
+            V3 color = {188.0f, 238.0f, 104.0f};
+            glClearColor(color.r/255.0f, color.g/255.0f, color.b/255.0f, 0);
+            // clear the color buffer.
+            glClear(GL_COLOR_BUFFER_BIT);
+            SwapBuffers(global_device_context);
+#else
+            // NOTE: Render using bitmaps.
+            W32_WindowDimension window_dimension = w32_get_window_dimension(window_handle);
+            w32_resize_dib_section(&global_offscreen_buffer, window_dimension.width, window_dimension.height);
+#endif
         };
         default:{
             result = DefWindowProc(window_handle, message, w_param, l_param);
@@ -420,12 +424,8 @@ LRESULT CALLBACK w32_main_window_proc(HWND window_handle, UINT message, WPARAM w
 }
 
 
-INT WINAPI WinMain(HINSTANCE instance,
-                   HINSTANCE prev_instance,
-                   PSTR cmd_line,
-                   int show_code){
-    w32_load_xinput();
-    
+INT WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR cmd_line, int show_code){
+    w32_init_xinput();
     
     WNDCLASSA window_class = {0};
     {
@@ -445,24 +445,24 @@ INT WINAPI WinMain(HINSTANCE instance,
             w32_init_opengl(window_handle);
             
             // NOTE: DirectSound:
-            SoundOutput sound_output = {0};
+            W32_SoundOutput sound_output = {0};
             {
                 sound_output.samples_per_second = 48000;
                 sound_output.bytes_per_sample = sizeof(s16) * 2;
                 sound_output.buffer_size = (sound_output.samples_per_second * sound_output.bytes_per_sample);
                 sound_output.tone_volume = 400;
-                sound_output.tone_Hz = 256; // middle c.
+                sound_output.tone_hz = 256; // middle c.
                 sound_output.running_sample_index = 0;
-                sound_output.wave_period = (sound_output.samples_per_second / sound_output.tone_Hz);
+                sound_output.wave_period = (sound_output.samples_per_second / sound_output.tone_hz);
             }
             w32_init_dsound(window_handle, sound_output.samples_per_second, sound_output.bytes_per_sample);
             w32_fill_sound_buffer(&sound_output, 0, sound_output.buffer_size);
-            
-            HDC device_context = GetDC(window_handle);
+
+            s32 x_offset = 0;
+            s32 y_offset = 0;
 
             global_running = 1;
             while(global_running){
-        
                 MSG message;
         
                 while(PeekMessage(&message, 0, 0, 0, PM_REMOVE)){
@@ -553,11 +553,24 @@ INT WINAPI WinMain(HINSTANCE instance,
                                 
                 {
                     // NOTE: Game update and render:
-                    game_update_and_render();
-                    SwapBuffers(device_context);
+                    GameOffscreenBuffer offscreen_buffer = {0};
+                    {
+                        offscreen_buffer.memory = global_offscreen_buffer.memory;
+                        offscreen_buffer.width = global_offscreen_buffer.width;
+                        offscreen_buffer.height = global_offscreen_buffer.height;
+                        offscreen_buffer.pitch = global_offscreen_buffer.pitch;
+                    }
+                    game_update_and_render(&offscreen_buffer, x_offset, y_offset);
+#if OPENGL_RENDERER
+                    SwapBuffers(global_device_context);
+#else
+                    W32_WindowDimension window_dimension = w32_get_window_dimension(window_handle);
+                    w32_display_offscreen_buffer(&global_offscreen_buffer, global_device_context,
+                                                 window_dimension.width, window_dimension.height);
+#endif
                 }
             }
-            ReleaseDC(window_handle, device_context);
+            ReleaseDC(window_handle, global_device_context);
         }
         else{
             // TODO: Error handling ("CreateWindowEx" call failed).
