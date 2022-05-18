@@ -77,6 +77,27 @@ internal void w32_init_xinput(void);
 internal void w32_init_opengl(HWND window_handle);
 internal void w32_init_dsound(HWND window_handle, s32 samples_per_second, s32 bytes_per_sample);
 internal void w32_fill_sound_buffer(W32_SoundOutput *sound_output, s32 byte_to_lock, s32 bytes_to_write);
+inline internal u64 w32_timer_get_frequency(void);
+inline internal u64 w32_timer_get_counts(void);
+inline internal u64 w32_timer_cycles(void);
+
+
+inline internal u64 w32_timer_get_cycles(void){
+    u64 result = __rdtsc();
+    return(result);
+}
+
+inline internal u64 w32_timer_get_frequency(void){
+    u64 result = 0;
+    QueryPerformanceFrequency((LARGE_INTEGER *)&result);
+    return(result);
+}
+
+inline internal u64 w32_timer_get_counts(void){
+    u64 result = 0;
+    QueryPerformanceCounter((LARGE_INTEGER *)&result);
+    return(result);
+}
 
 
 internal void w32_fill_sound_buffer(W32_SoundOutput *sound_output, s32 byte_to_lock, s32 bytes_to_write){
@@ -425,6 +446,7 @@ LRESULT CALLBACK w32_main_window_proc(HWND window_handle, UINT message, WPARAM w
 
 
 INT WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR cmd_line, int show_code){
+    u64 timer_frequency = w32_timer_get_frequency();
     w32_init_xinput();
     
     WNDCLASSA window_class = {0};
@@ -462,6 +484,11 @@ INT WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR cmd_line, i
             s32 y_offset = 0;
 
             global_running = 1;
+            u64 timer_start_counts = w32_timer_get_counts(),
+                timer_end_counts;
+            u64 timer_start_cycles = w32_timer_get_cycles(),
+                timer_end_cycles;
+            
             while(global_running){
                 MSG message;
         
@@ -568,6 +595,27 @@ INT WINAPI WinMain(HINSTANCE instance, HINSTANCE prev_instance, PSTR cmd_line, i
                     w32_display_offscreen_buffer(&global_offscreen_buffer, global_device_context,
                                                  window_dimension.width, window_dimension.height);
 #endif
+                }
+
+                {
+                    // NOTE: Timing.
+                    timer_end_cycles = w32_timer_get_cycles();
+                    timer_end_counts = w32_timer_get_counts();
+
+                    {
+                        u64 timer_elapsed_cycles = timer_end_cycles - timer_start_cycles;
+                        u32 timer_elapsed_Mhz = (timer_elapsed_cycles / 1000000);
+                        u64 timer_elapsed_counts = timer_end_counts - timer_start_counts;
+                        f32 timer_elapsed_ms = (f32)((1000.0f * (f32)timer_elapsed_counts) / (f32)timer_frequency);
+                        f32 timer_frames_per_sec = ((f32)timer_frequency / (f32)timer_elapsed_counts);
+
+                        char buf[256];
+                        Out_s(buf, sizeof(buf), "Mhz: %u\nms: %f\nfps: %f\n\n",
+                              timer_elapsed_Mhz, timer_elapsed_ms, timer_frames_per_sec);
+                    }
+                    
+                    timer_start_cycles = timer_end_cycles;
+                    timer_start_counts = timer_end_counts;
                 }
             }
             ReleaseDC(window_handle, global_device_context);
